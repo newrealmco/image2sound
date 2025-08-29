@@ -6,15 +6,92 @@ __pycache__/
 *.so
 *.egg-info/
 *.egg
+build/
+dist/
+.Python
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+MANIFEST
 
-# Virtual env
+# Virtual environments
 .venv/
 env/
 venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Testing
+.tox/
+.coverage
+.pytest_cache/
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# Audio output files
+*.wav
+*.mp3
+*.ogg
+*.flac
+*.aac
+
+# Image files (except examples)
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+!examples/*.png
+!examples/*.jpg
+!examples/*.jpeg
+!examples/*.gif
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
 
 # IDE
 .idea/
 .vscode/
+*.swp
+*.swo
+*~
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Python version files
+.python-version
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+tmp/
+temp/
+*.tmp

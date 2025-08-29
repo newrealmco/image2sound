@@ -23,7 +23,12 @@ def test_compose_smoke():
         root="C", 
         instruments=["piano", "lead", "drums"],
         intensity=0.7,
-        duration=5.0
+        duration=5.0,
+        mode="ionian",
+        meter=(4, 4),
+        progression=["I", "V", "vi", "IV"],
+        pan_lead=0.0,
+        lead_offset=0
     )
     
     # Compose the track

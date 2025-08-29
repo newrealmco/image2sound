@@ -1,0 +1,19 @@
+[project]
+name = "image2sound"
+version = "0.1.0"
+description = "Turn images into short musical pieces via algorithmic sonification."
+readme = "README.md"
+authors = [{name="Rami Pinku", email="contact@newrelam.co"}]
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+dependencies = [
+  "Pillow", "numpy", "opencv-python", "scikit-learn",
+  "soundfile", "librosa", "click"
+]
+
+[project.scripts]
+image2sound = "image2sound.cli:main"
+
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"

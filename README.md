@@ -31,6 +31,18 @@ python -m image2sound.cli landscape.png --style cinematic --duration 30
 python -m image2sound.cli portrait.jpg -o music.wav --style rock --duration 15
 ```
 
+## Batch demo
+Generate a comprehensive demo set with musical metadata for analysis:
+```bash
+# Run batch processing on all images in examples/
+python scripts/batch_demo.py
+
+# Creates files like: bright_gradient_ambient_C_ionian_95bpm_4-4_I-V-vi-IV.wav
+# Outputs CSV with: file,image,style,bpm,key,mode,meter,progression,seed,brightness,contrast,edge_density
+```
+
+The batch script processes all images in `examples/` with each of the 4 styles (neutral, ambient, cinematic, rock), creating descriptive filenames that include the musical parameters and outputting detailed CSV metadata for analysis.
+
 ## Install & test locally
 ```bash
 python3.11 -m venv .venv && source .venv/bin/activate

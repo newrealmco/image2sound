@@ -70,6 +70,13 @@ def main(image_path: str, out: str, style: str, duration: float) -> None:
     print("=" * 60)
     print(f"🎵 Your image has been transformed into music!")
     print(f"📁 Audio saved to: {out}")
+    print()
+    print("📊 Musical Summary:")
+    print(f"   🎹 Key: {params.root} {params.mode}")
+    print(f"   🥁 Tempo: {params.bpm} BPM in {params.meter[0]}/{params.meter[1]} time")
+    print(f"   🎼 Progression: {' → '.join(params.progression)}")
+    print(f"   🎲 Seed: {feats.seed} (deterministic from image)")
+    print()
     print(f"🎧 Ready to play - enjoy your sonic artwork! ✨")
     print("=" * 60)
 

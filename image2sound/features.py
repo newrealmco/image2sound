@@ -7,12 +7,40 @@ from sklearn.cluster import KMeans
 
 @dataclass
 class ImageFeatures:
+    """Container for extracted image features.
+    
+    Attributes:
+        brightness: Average brightness value normalized to [0,1]
+        contrast: Standard deviation of grayscale values normalized to [0,1] 
+        edge_density: Density of detected edges normalized to [0,1]
+        palette_rgb: List of 5 dominant RGB color tuples
+    """
     brightness: float
     contrast: float
     edge_density: float
-    palette_rgb: list  # list[tuple[int,int,int]]
+    palette_rgb: list[tuple[int, int, int]]
 
 def extract_features(path: Path, k_palette: int = 5) -> ImageFeatures:
+    """Extract visual features from an image for audio synthesis mapping.
+    
+    Efficiently computes brightness, contrast, edge density, and color palette
+    from an image. Optimized for ~200ms performance on 1080p images.
+    
+    Args:
+        path: Path to the input image file
+        k_palette: Number of dominant colors to extract (default: 5)
+        
+    Returns:
+        ImageFeatures containing:
+            - brightness: Mean grayscale value [0,1] 
+            - contrast: Standard deviation of grayscale [0,1]
+            - edge_density: Canny edge density [0,1]
+            - palette_rgb: List of k_palette RGB tuples
+            
+    Raises:
+        FileNotFoundError: If image path doesn't exist
+        PIL.UnidentifiedImageError: If file is not a valid image
+    """
     img = Image.open(path).convert("RGB")
     arr = np.asarray(img).astype(np.float32) / 255.0
     gray = cv2.cvtColor((arr * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0

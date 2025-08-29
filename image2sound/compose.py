@@ -50,32 +50,60 @@ def compose_track(p: MusicParams) -> List[Note]:
     Returns:
         List of Note objects sorted by start time
     """
-    print("🎶Composing🎶")
-
+    print(f"🎼 Composing musical arrangement...")
+    print(f"   🎵 Key: {p.scale}, {p.bpm} BPM, {p.duration:.1f}s duration")
+    
     major = "major" in p.scale
     scale = _scale_midi(p.root, major)
     spb = 60.0 / p.bpm  # seconds per beat
     notes: List[Note] = []
     beats = int(p.duration / spb)
+    
+    print(f"   📏 Timing: {spb:.3f}s per beat, {beats} total beats")
+    print(f"   🎹 Scale notes: {scale}")
+
+    # Track counters for progress
+    chord_count = 0
+    lead_count = 0  
+    bass_count = 0
+    drum_count = 0
 
     for b in range(beats):
         t = b * spb
+        
+        # Show progress every 25% of beats
+        if beats >= 4 and b % (beats // 4) == 0 and b > 0:
+            progress = int((b / beats) * 100)
+            print(f"   [{progress}%] 🎵 Composing beat {b}/{beats}...")
         
         # Chords: triad on beat %4==0, duration=2 beats
         if b % 4 == 0:
             for m in [scale[0], scale[2], scale[4]]:
                 notes.append(Note(t, 2*spb, m, 0.5, "chords"))
+                chord_count += 1
         
         # Lead: ascending scale pattern, +12 semitones (octave up)
         lead = scale[(b*2) % len(scale)] + 12
         notes.append(Note(t, spb, lead, 0.8, "lead"))
+        lead_count += 1
         
         # Bass: root note on even beats, -12 semitones (octave down)
         if b % 2 == 0:
             notes.append(Note(t, spb, scale[0]-12, 0.7, "bass"))
+            bass_count += 1
         
         # Drums: alternating kick (36) and snare (38) every beat
         notes.append(Note(t, 0.05, 36 if b % 2 == 0 else 38, 1.0, "drums"))
+        drum_count += 1
+
+    print(f"   [100%] ✨ Composition complete!")
+    print(f"   📊 Generated {len(notes)} total notes:")
+    print(f"   🎹 Chords: {chord_count} notes")
+    print(f"   🎶 Lead melody: {lead_count} notes") 
+    print(f"   🎸 Bass: {bass_count} notes")
+    print(f"   🥁 Drums: {drum_count} notes")
     
     # Sort by start time
-    return sorted(notes, key=lambda n: n.start)
+    sorted_notes = sorted(notes, key=lambda n: n.start)
+    print(f"   🎼 Notes arranged chronologically")
+    return sorted_notes

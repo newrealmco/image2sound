@@ -29,12 +29,49 @@ def main(image_path: str, out: str, style: str, duration: float) -> None:
         --style: Musical style - neutral, ambient, cinematic, or rock
         --duration: Target audio duration in seconds (default: 20.0)
     """
-    print("🎶Convert an image to audio🎶")
+    print("=" * 60)
+    print("🎨✨ IMAGE2SOUND: Algorithmic Sonification ✨🎵")
+    print("=" * 60)
+    print(f"🖼️  Input: {image_path}")
+    print(f"🎼 Style: {style}")
+    print(f"⏱️  Duration: {duration}s")
+    print(f"📁 Output: {out}")
+    print()
+    
+    print("🚀 Starting sonification pipeline...")
+    print()
+    
+    # Step 1: Feature Extraction
+    print("🔍 STEP 1/4: Visual Feature Extraction")
+    print("-" * 40)
     feats = extract_features(Path(image_path))
+    print()
+    
+    # Step 2: Musical Mapping  
+    print("🎵 STEP 2/4: Musical Parameter Mapping")
+    print("-" * 40)
     params = map_features_to_music(feats, style=style, target_duration=duration)
+    print()
+    
+    # Step 3: Composition
+    print("🎼 STEP 3/4: Musical Composition")
+    print("-" * 40)
     notes = compose_track(params)
+    print()
+    
+    # Step 4: Audio Synthesis
+    print("🎚️  STEP 4/4: Audio Synthesis")
+    print("-" * 40)
     render_wav(notes, sr=44100, out_path=Path(out))
-    click.echo(f"✓ Wrote {out}")
+    print()
+    
+    print("=" * 60)
+    print("🎉 SONIFICATION COMPLETE! 🎉")
+    print("=" * 60)
+    print(f"🎵 Your image has been transformed into music!")
+    print(f"📁 Audio saved to: {out}")
+    print(f"🎧 Ready to play - enjoy your sonic artwork! ✨")
+    print("=" * 60)
 
 if __name__ == "__main__":
     main()

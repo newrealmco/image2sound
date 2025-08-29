@@ -41,18 +41,32 @@ def extract_features(path: Path, k_palette: int = 5) -> ImageFeatures:
         FileNotFoundError: If image path doesn't exist
         PIL.UnidentifiedImageError: If file is not a valid image
     """
+    print(f"📸 Loading image: {path.name}")
     img = Image.open(path).convert("RGB")
+    print(f"   ✅ Image loaded ({img.size[0]}x{img.size[1]} pixels)")
+    
+    print("🔍 Analyzing visual features...")
     arr = np.asarray(img).astype(np.float32) / 255.0
     gray = cv2.cvtColor((arr * 255).astype(np.uint8), cv2.COLOR_RGB2GRAY).astype(np.float32) / 255.0
 
+    print("   [25%] 💡 Computing brightness...")
     brightness = float(gray.mean())
+    
+    print("   [50%] ⚡ Computing contrast...")
     contrast = float(gray.std())
+    
+    print("   [75%] 🔲 Detecting edges...")
     edges = cv2.Canny((gray * 255).astype(np.uint8), 100, 200)
     edge_density = float(edges.mean()) / 255.0
 
+    print("   [90%] 🎨 Extracting color palette...")
     flat = arr.reshape(-1, 3)
     km = KMeans(n_clusters=k_palette, n_init="auto", random_state=0).fit(flat)
     centers = (km.cluster_centers_ * 255).astype(int)
     palette = [tuple(map(int, c)) for c in centers]
+
+    print("   [100%] ✨ Feature extraction complete!")
+    print(f"   📊 Results: brightness={brightness:.2f}, contrast={contrast:.2f}, edges={edge_density:.2f}")
+    print(f"   🌈 Dominant colors: {len(palette)} found")
 
     return ImageFeatures(brightness, contrast, edge_density, palette)

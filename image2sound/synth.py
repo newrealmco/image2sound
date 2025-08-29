@@ -31,15 +31,37 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
     Output:
         Writes 32-bit float WAV file with simple limiter at 0.98 peak
     """
+    print(f"🎚️  Preparing audio synthesis...")
+    
     # Calculate total duration with 0.5s buffer
     dur = max(n.start + n.dur for n in notes) + 0.5
     y = np.zeros(int(sr * dur), dtype=np.float32)
-
+    
+    print(f"   📏 Audio buffer: {dur:.2f}s at {sr}Hz ({len(y):,} samples)")
+    
+    # Group notes by track for progress reporting
+    tracks = {}
+    for n in notes:
+        if n.track not in tracks:
+            tracks[n.track] = []
+        tracks[n.track].append(n)
+    
+    print(f"   🎵 Synthesizing {len(notes)} notes across {len(tracks)} tracks...")
+    
+    total_notes = len(notes)
+    processed = 0
+    
     for n in notes:
         start = int(sr * n.start)
         length = int(sr * n.dur)
         if length <= 0: 
+            processed += 1
             continue
+
+        # Show progress every 25% of notes
+        if total_notes >= 4 and processed % (total_notes // 4) == 0 and processed > 0:
+            progress = int((processed / total_notes) * 100)
+            print(f"   [{progress}%] 🎼 Synthesizing note {processed}/{total_notes}...")
 
         if n.track == "drums":
             # Drums: noise burst with quick linear decay
@@ -59,10 +81,25 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
             
         # Sum into buffer
         y[start:start+length] += sig
-
+        processed += 1
+    
+    print(f"   [90%] 🔊 Applying audio limiter...")
     # Simple limiter to 0.98 peak
     mx = float(np.max(np.abs(y)) or 1.0)
     y = (y / mx * 0.98).astype(np.float32)
+    print(f"   📊 Peak level: {mx:.3f} → 0.98 (normalized)")
     
+    print(f"   [95%] 💾 Writing WAV file...")
     # Write WAV file
     sf.write(str(out_path), y, sr)
+    
+    # File size for user feedback
+    import os
+    file_size = os.path.getsize(out_path)
+    size_mb = file_size / (1024 * 1024)
+    
+    print(f"   [100%] ✅ Audio synthesis complete!")
+    print(f"   🎵 Track breakdown:")
+    for track_name, track_notes in tracks.items():
+        print(f"   🎸 {track_name}: {len(track_notes)} notes synthesized")
+    print(f"   📁 Output: {out_path} ({size_mb:.1f}MB)")

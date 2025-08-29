@@ -13,12 +13,14 @@ class Note:
         midi: MIDI note number (60 = middle C)
         vel: Velocity/volume [0,1]
         track: Track name for grouping notes
+        pan: Stereo pan position [-1.0, 1.0] where -1=left, 0=center, 1=right
     """
     start: float
     dur: float
     midi: int
     vel: float
     track: str
+    pan: float = 0.0
 
 def _scale_midi(root: str, major: bool) -> list[int]:
     """Build a major or minor scale starting from root note.
@@ -76,24 +78,26 @@ def compose_track(p: MusicParams) -> List[Note]:
             progress = int((b / beats) * 100)
             print(f"   [{progress}%] 🎵 Composing beat {b}/{beats}...")
         
-        # Chords: triad on beat %4==0, duration=2 beats
+        # Chords: triad on beat %4==0, duration=2 beats (slight left pan)
         if b % 4 == 0:
-            for m in [scale[0], scale[2], scale[4]]:
-                notes.append(Note(t, 2*spb, m, 0.5, "chords"))
+            for i, m in enumerate([scale[0], scale[2], scale[4]]):
+                # Apply transposition from lead_offset
+                transposed = m + p.lead_offset
+                notes.append(Note(t, 2*spb, transposed, 0.5, "chords", -0.2))
                 chord_count += 1
         
-        # Lead: ascending scale pattern, +12 semitones (octave up)
-        lead = scale[(b*2) % len(scale)] + 12
-        notes.append(Note(t, spb, lead, 0.8, "lead"))
+        # Lead: ascending scale pattern, +12 semitones (octave up) with pan_lead
+        lead = scale[(b*2) % len(scale)] + 12 + p.lead_offset
+        notes.append(Note(t, spb, lead, 0.8, "lead", p.pan_lead))
         lead_count += 1
         
-        # Bass: root note on even beats, -12 semitones (octave down)
+        # Bass: root note on even beats, -12 semitones (octave down, center)
         if b % 2 == 0:
-            notes.append(Note(t, spb, scale[0]-12, 0.7, "bass"))
+            notes.append(Note(t, spb, scale[0]-12, 0.7, "bass", 0.0))
             bass_count += 1
         
-        # Drums: alternating kick (36) and snare (38) every beat
-        notes.append(Note(t, 0.05, 36 if b % 2 == 0 else 38, 1.0, "drums"))
+        # Drums: alternating kick (36) and snare (38) every beat (slight right pan)
+        notes.append(Note(t, 0.05, 36 if b % 2 == 0 else 38, 1.0, "drums", 0.1))
         drum_count += 1
 
     print(f"   [100%] ✨ Composition complete!")

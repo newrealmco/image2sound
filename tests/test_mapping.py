@@ -1,5 +1,21 @@
-from image2sound.mapping import map_features_to_music, _rgb_to_hue
+from image2sound.mapping import map_features_to_music, _rgb_to_hue, MODES, METERS
 from image2sound.features import ImageFeatures
+
+def _create_test_features(**kwargs):
+    """Helper to create ImageFeatures with all required fields."""
+    defaults = {
+        'brightness': 0.5,
+        'contrast': 0.3,
+        'edge_density': 0.2,
+        'palette_rgb': [(128, 128, 128)] * 5,
+        'palette_variance': 0.1,
+        'texture_energy': 0.4,
+        'cx': 0.5,
+        'cy': 0.5,
+        'seed': 12345,
+    }
+    defaults.update(kwargs)
+    return ImageFeatures(**defaults)
 
 def test_rgb_to_hue():
     """Test _rgb_to_hue returns values in [0,360) range."""
@@ -13,13 +29,13 @@ def test_rgb_to_hue():
     assert _rgb_to_hue((0, 0, 0)) == 0.0
     assert _rgb_to_hue((255, 255, 255)) == 0.0
 
-def test_mapping_ranges():
+def test_enhanced_mapping_ranges():
     """Test that all mapped parameters are within expected ranges."""
-    feats = ImageFeatures(brightness=0.7, contrast=0.2, edge_density=0.1,
-                          palette_rgb=[(255,0,0)]*5)
+    feats = _create_test_features(brightness=0.7, contrast=0.2, edge_density=0.1,
+                                  palette_rgb=[(255,0,0)]*5)
     p = map_features_to_music(feats, style="ambient", target_duration=5.0)
     
-    # Test ranges
+    # Test existing ranges
     assert 60 <= p.bpm <= 160
     assert 0 <= p.intensity <= 1
     assert p.duration == 5.0
@@ -28,14 +44,22 @@ def test_mapping_ranges():
     valid_roots = {"C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"}
     assert p.root in valid_roots
     
-    # Test scale format
+    # Test scale format (legacy)
     assert p.scale.endswith("_major") or p.scale.endswith("_minor")
     assert p.scale.startswith(p.root)
+    
+    # Test new fields
+    assert p.mode in MODES.keys()
+    assert p.meter in METERS
+    assert isinstance(p.progression, list)
+    assert len(p.progression) >= 3  # Reasonable progression length
+    assert -0.6 <= p.pan_lead <= 0.6
+    assert -5 <= p.lead_offset <= 5
 
 def test_duration_passthrough():
     """Test that target_duration is passed through correctly."""
-    feats = ImageFeatures(brightness=0.5, contrast=0.3, edge_density=0.2,
-                          palette_rgb=[(100,150,200)]*5)
+    feats = _create_test_features(brightness=0.5, contrast=0.3, edge_density=0.2,
+                                  palette_rgb=[(100,150,200)]*5)
     
     for duration in [10.0, 30.0, 60.0]:
         p = map_features_to_music(feats, target_duration=duration)
@@ -44,8 +68,8 @@ def test_duration_passthrough():
 def test_style_effects():
     """Test that styles produce expected BPM differences and other effects."""
     # Use same features for all styles to compare effects
-    feats = ImageFeatures(brightness=0.6, contrast=0.4, edge_density=0.3,
-                          palette_rgb=[(128,128,128)]*5)
+    feats = _create_test_features(brightness=0.6, contrast=0.4, edge_density=0.3,
+                                  palette_rgb=[(128,128,128)]*5)
     
     neutral = map_features_to_music(feats, style="neutral")
     ambient = map_features_to_music(feats, style="ambient") 
@@ -72,27 +96,27 @@ def test_style_effects():
 def test_brightness_to_bpm_mapping():
     """Test BPM mapping from brightness values."""
     # Test min brightness
-    feats_dark = ImageFeatures(brightness=0.0, contrast=0.5, edge_density=0.5,
-                               palette_rgb=[(0,0,0)]*5)
+    feats_dark = _create_test_features(brightness=0.0, contrast=0.5, edge_density=0.5,
+                                       palette_rgb=[(0,0,0)]*5)
     p_dark = map_features_to_music(feats_dark, style="neutral")
     assert p_dark.bpm == 80  # Min BPM
     
     # Test max brightness  
-    feats_bright = ImageFeatures(brightness=1.0, contrast=0.5, edge_density=0.5,
-                                 palette_rgb=[(255,255,255)]*5)
+    feats_bright = _create_test_features(brightness=1.0, contrast=0.5, edge_density=0.5,
+                                         palette_rgb=[(255,255,255)]*5)
     p_bright = map_features_to_music(feats_bright, style="neutral")
     assert p_bright.bpm == 140  # Max BPM
 
 def test_brightness_to_scale_mapping():
     """Test scale selection based on brightness."""
     # Bright image should use major scale
-    feats_bright = ImageFeatures(brightness=0.8, contrast=0.5, edge_density=0.5,
-                                 palette_rgb=[(200,200,200)]*5)
+    feats_bright = _create_test_features(brightness=0.8, contrast=0.5, edge_density=0.5,
+                                         palette_rgb=[(200,200,200)]*5)
     p_bright = map_features_to_music(feats_bright, style="neutral")
     assert p_bright.scale.endswith("_major")
     
     # Dark image should use minor scale
-    feats_dark = ImageFeatures(brightness=0.2, contrast=0.5, edge_density=0.5,
-                               palette_rgb=[(50,50,50)]*5)
+    feats_dark = _create_test_features(brightness=0.2, contrast=0.5, edge_density=0.5,
+                                       palette_rgb=[(50,50,50)]*5)
     p_dark = map_features_to_music(feats_dark, style="neutral")
     assert p_dark.scale.endswith("_minor")

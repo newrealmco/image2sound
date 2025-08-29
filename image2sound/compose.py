@@ -50,6 +50,8 @@ def compose_track(p: MusicParams) -> List[Note]:
     Returns:
         List of Note objects sorted by start time
     """
+    print("🎶Composing🎶")
+
     major = "major" in p.scale
     scale = _scale_midi(p.root, major)
     spb = 60.0 / p.bpm  # seconds per beat

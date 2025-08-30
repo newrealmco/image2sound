@@ -121,7 +121,12 @@ def generate_music(
                 return "❌ Invalid seed", None, f"Seed must be an integer, got: {seed_text}", ""
         
         # Extract features from image
-        features = extract_features(image_file, seed=seed)
+        from pathlib import Path
+        features = extract_features(Path(image_file))
+        
+        # Apply seed if provided (otherwise use image-derived seed)
+        if seed is not None:
+            features.seed = seed
         
         progress(0.4, desc="🎵 Mapping features to music...")
         
@@ -411,10 +416,9 @@ def main() -> None:
         print("   - The interface will open in your default browser")
         print("   - Use Ctrl+C to stop the server")
         
-        # Launch with browser opening and automatic port selection
+        # Launch with browser opening and default port selection
         demo.launch(
             inbrowser=True,
-            server_port=0,  # Automatically select an available port
             prevent_thread_lock=False,  # Keep the main thread alive
             show_error=True,
             quiet=False
@@ -425,6 +429,10 @@ def main() -> None:
         sys.exit(0)
     except Exception as e:
         print(f"❌ Failed to start UI: {e}")
+        print("\nTroubleshooting:")
+        print("- Make sure no other application is using port 7860")
+        print("- Try running: lsof -ti:7860 | xargs kill -9")
+        print("- Or manually specify a different port in the code")
         sys.exit(1)
 
 

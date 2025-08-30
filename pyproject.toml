@@ -10,11 +10,13 @@ keywords = ["audio", "music", "sonification", "image", "ai", "gradio"]
 classifiers = [
   "Development Status :: 3 - Alpha",
   "Intended Audience :: End Users/Desktop",
-  "Topic :: Multimedia :: Sound/Audio :: Generation",
   "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Environment :: Console",
+  "Topic :: Multimedia :: Sound/Audio"
 ]
 
 # ✅ Core runtime deps (needed for tests/CI)

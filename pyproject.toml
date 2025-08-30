@@ -4,7 +4,7 @@ version = "0.5.0"
 description = "Turn images into short musical pieces via algorithmic sonification."
 readme = "README.md"
 requires-python = ">=3.10"
-license = {text = "Apache-2.0"}
+license = "Apache-2.0"
 authors = [{ name = "Rami Pinku", email = "contact@newrelam.co" }]
 keywords = ["audio", "music", "sonification", "image", "ai", "gradio"]
 classifiers = [
@@ -46,3 +46,7 @@ ui = ["gradio>=4.0"]
 [build-system]
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["image2sound*"]
+exclude = ["tests*", "scripts*", "examples*", "docs*"]

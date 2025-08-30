@@ -2,6 +2,20 @@
 Turn images into short musical pieces via algorithmic sonification.
 
 ## Quickstart
+
+### GUI (Recommended)
+```bash
+pip install -e .[ui]
+image2sound-ui
+```
+Opens a beautiful web interface in your browser where you can:
+- Upload images with drag & drop
+- Choose musical styles and settings  
+- Watch real-time generation progress
+- Play generated music instantly
+- Download files and open in file manager
+
+### Command Line
 ```bash
 pip install -e .
 python -m image2sound.cli examples/demo.jpg -o out.wav --style ambient --duration 20

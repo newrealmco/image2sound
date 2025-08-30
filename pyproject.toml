@@ -11,8 +11,12 @@ dependencies = [
   "soundfile", "librosa", "click"
 ]
 
+[project.optional-dependencies]
+ui = ["gradio>=4.0"]
+
 [project.scripts]
 image2sound = "image2sound.cli:main"
+image2sound-ui = "image2sound.ui:main"
 
 [build-system]
 requires = ["setuptools", "wheel"]

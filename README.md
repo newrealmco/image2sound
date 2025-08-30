@@ -17,12 +17,12 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 pip install -e .[ui]
 ```
 
-### Future PyPI Installation
+### PyPI Installation
 ```bash
-# Once published to PyPI (coming soon)
-pip install image2sound[ui]  # With web UI
-# or
-pip install image2sound      # Command line only
+# With web UI
+pip install image2sound[ui]
+# or command line only
+pip install image2sound
 ```
 
 ## Quickstart

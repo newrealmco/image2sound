@@ -1,6 +1,14 @@
-import numpy as np, soundfile as sf
+import numpy as np
+import wave
 from typing import List
 from .compose import Note
+
+# Try to import soundfile, fallback to built-in wave module
+try:
+    import soundfile as sf
+    HAS_SOUNDFILE = True
+except ImportError:
+    HAS_SOUNDFILE = False
 
 def _midi_to_freq(m: int) -> float:
     """Convert MIDI note number to frequency in Hz.
@@ -316,6 +324,47 @@ def _get_envelope(instrument: str, length: int, sr: int) -> np.ndarray:
     return env
 
 
+def write_wav_pcm16(path: str, y: np.ndarray, sr: int) -> None:
+    """Write audio data to WAV file using built-in wave module.
+    
+    Args:
+        path: Output file path
+        y: Audio data array, shape (samples,) for mono or (samples, 2) for stereo
+        sr: Sample rate in Hz
+    """
+    # Handle mono vs stereo
+    if y.ndim == 1:
+        # Mono
+        nchannels = 1
+        frames = y
+    elif y.ndim == 2 and y.shape[1] == 2:
+        # Stereo - interleave channels
+        nchannels = 2
+        frames = y  # Already in correct format
+    else:
+        raise ValueError(f"Unsupported audio shape: {y.shape}. Expected (samples,) or (samples, 2)")
+    
+    # Clip to [-1, 1] range
+    frames = np.clip(frames, -1.0, 1.0)
+    
+    # Convert to 16-bit PCM
+    frames_int16 = (frames * 32767).astype(np.int16)
+    
+    # Write WAV file
+    with wave.open(path, 'wb') as wf:
+        wf.setnchannels(nchannels)
+        wf.setsampwidth(2)  # 2 bytes = 16 bits
+        wf.setframerate(sr)
+        
+        if nchannels == 1:
+            # Mono - write directly
+            wf.writeframes(frames_int16.tobytes())
+        else:
+            # Stereo - interleave and write
+            interleaved = frames_int16.flatten()
+            wf.writeframes(interleaved.tobytes())
+
+
 def _circular_delay(signal: np.ndarray, delay_samples: int, feedback: float) -> np.ndarray:
     """Apply simple circular buffer delay effect.
     
@@ -367,7 +416,9 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
         out_path: Output file path for WAV file
         
     Output:
-        Writes stereo 32-bit float WAV file with limiter at 0.98 peak
+        Writes stereo WAV file with limiter at 0.98 peak:
+        - 32-bit float if soundfile is available
+        - 16-bit PCM if using built-in wave module fallback
     """
     print(f"🎚️  Preparing audio synthesis...")
     
@@ -579,8 +630,16 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
     print(f"   📊 Peak level: {mx:.3f} → 0.98 (normalized)")
     
     print(f"   [95%] 💾 Writing stereo WAV file...")
-    # Write stereo WAV file
-    sf.write(str(out_path), y, sr)
+    
+    # Use soundfile if available (32-bit float), otherwise use built-in wave (16-bit PCM)
+    if HAS_SOUNDFILE:
+        # Write 32-bit float stereo WAV file with soundfile
+        sf.write(str(out_path), y, sr)
+        print(f"   🎵 Format: 32-bit float WAV via soundfile")
+    else:
+        # Write 16-bit PCM stereo WAV file with built-in wave module
+        write_wav_pcm16(str(out_path), y, sr)
+        print(f"   🎵 Format: 16-bit PCM WAV via built-in wave module")
     
     # File size for user feedback
     import os

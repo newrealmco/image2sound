@@ -1,15 +1,16 @@
 from pathlib import Path
 from PIL import Image
+import pytest
 from image2sound.features import extract_features
 
 def test_extract_features_smoke(tmp_path: Path):
-    """Test extract_features with a small solid-color image."""
+    """Test extract_features with a small solid-color image using PIL backend."""
     # Create a small solid-color image
     img_path = tmp_path / "test_img.png"
     Image.new("RGB", (10, 10), color=(200, 50, 50)).save(img_path)
     
-    # Extract features
-    features = extract_features(img_path)
+    # Extract features using PIL backend (default)
+    features = extract_features(img_path, backend="pil")
     
     # Assert basic feature ranges
     assert 0 <= features.brightness <= 1
@@ -38,7 +39,7 @@ def test_extract_features_smoke(tmp_path: Path):
 
 
 def test_deterministic_seed(tmp_path: Path):
-    """Test that the same image produces the same seed."""
+    """Test that the same image produces the same seed with PIL backend."""
     # Create identical images
     img_path1 = tmp_path / "test1.png" 
     img_path2 = tmp_path / "test2.png"
@@ -46,12 +47,44 @@ def test_deterministic_seed(tmp_path: Path):
     img.save(img_path1)
     img.save(img_path2)
     
-    # Extract features from both
-    features1 = extract_features(img_path1)
-    features2 = extract_features(img_path2)
+    # Extract features from both using PIL backend
+    features1 = extract_features(img_path1, backend="pil")
+    features2 = extract_features(img_path2, backend="pil")
     
     # Seeds should be identical for identical image content
     assert features1.seed == features2.seed
     
     # But different file paths should still give same seed for same content
     assert features1.brightness == features2.brightness
+
+
+def test_backend_validation(tmp_path: Path):
+    """Test that backend validation works correctly."""
+    # Create a test image
+    img_path = tmp_path / "test.png"
+    Image.new("RGB", (10, 10), color=(100, 100, 100)).save(img_path)
+    
+    # Test valid backends
+    features_pil = extract_features(img_path, backend="pil")
+    assert features_pil is not None
+    
+    # Test invalid backend
+    with pytest.raises(ValueError, match="Invalid backend"):
+        extract_features(img_path, backend="invalid")
+
+
+def test_pil_backend_default(tmp_path: Path):
+    """Test that PIL backend is used by default."""
+    img_path = tmp_path / "test.png"
+    Image.new("RGB", (15, 15), color=(128, 64, 192)).save(img_path)
+    
+    # Default should be PIL backend
+    features_default = extract_features(img_path)
+    features_pil = extract_features(img_path, backend="pil")
+    
+    # Results should be identical
+    assert features_default.brightness == features_pil.brightness
+    assert features_default.contrast == features_pil.contrast
+    assert features_default.edge_density == features_pil.edge_density
+    assert features_default.palette_variance == features_pil.palette_variance
+    assert features_default.texture_energy == features_pil.texture_energy

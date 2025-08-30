@@ -1,11 +1,11 @@
 [project]
 name = "image2sound-newrealm"
-version = "0.5.0"
+version = "0.5.1"
 description = "Turn images into short musical pieces via algorithmic sonification."
 readme = "README.md"
 requires-python = ">=3.10"
 license = "Apache-2.0"
-authors = [{ name = "Rami Pinku", email = "contact@newrelam.co" }]
+authors = [{ name = "Rami Pinku", email = "rami@newrelam.co" }]
 keywords = ["audio", "music", "sonification", "image", "ai", "gradio"]
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -18,19 +18,14 @@ classifiers = [
   "Topic :: Multimedia :: Sound/Audio"
 ]
 
-# ✅ Core runtime deps (needed for tests/CI)
+# ✅ minimal, fast core
 dependencies = [
   "Pillow",
   "numpy",
-  "opencv-python-headless",
-  "scikit-learn",
-  "soundfile",
-  "librosa",
   "click"
 ]
 
 [project.urls]
-Homepage = "https://newrelam.co/projects/image2sound"
 Repository = "https://github.com/newrealmco/image2sound"
 Issues = "https://github.com/newrealmco/image2sound/issues"
 Changelog = "https://github.com/newrealmco/image2sound/releases"
@@ -41,6 +36,15 @@ image2sound-ui = "image2sound.ui:main"
 
 [project.optional-dependencies]
 ui = ["gradio>=4.0"]
+opencv = ["opencv-python-headless"]
+audio = ["soundfile"]
+ml = ["scikit-learn"]
+full = [
+  "gradio>=4.0",
+  "opencv-python-headless",
+  "soundfile",
+  "scikit-learn"
+]
 
 [build-system]
 requires = ["setuptools", "wheel"]

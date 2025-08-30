@@ -1,9 +1,5 @@
 import click
 from pathlib import Path
-from .features import extract_features
-from .mapping import map_features_to_music
-from .compose import compose_track
-from .synth import render_wav
 
 @click.command()
 @click.argument("image_path", type=click.Path(exists=True))
@@ -29,6 +25,12 @@ def main(image_path: str, out: str, style: str, duration: float) -> None:
         --style: Musical style - neutral, ambient, cinematic, or rock
         --duration: Target audio duration in seconds (default: 20.0)
     """
+    # Import heavy modules only when actually running, not for --help
+    from .features import extract_features
+    from .mapping import map_features_to_music
+    from .compose import compose_track
+    from .synth import render_wav
+    
     print("=" * 60)
     print("🎨✨ IMAGE2SOUND: Algorithmic Sonification ✨🎵")
     print("=" * 60)

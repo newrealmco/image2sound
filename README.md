@@ -3,6 +3,16 @@ Turn images into short musical pieces via algorithmic sonification.
 
 ## Installation
 
+### PyPI Installation
+```bash
+pip install image2sound-newrealm                # core only
+pip install 'image2sound-newrealm[ui]'          # + Gradio UI
+pip install 'image2sound-newrealm[opencv]'      # + OpenCV feature extraction
+pip install 'image2sound-newrealm[audio]'       # + Soundfile output
+pip install 'image2sound-newrealm[ml]'          # + scikit-learn clustering
+pip install 'image2sound-newrealm[full]'        # all extras
+```
+
 ### Development Setup (Current)
 ```bash
 # Clone the repository
@@ -15,14 +25,6 @@ source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # Install with UI support
 pip install -e .[ui]
-```
-
-### PyPI Installation
-```bash
-# With web UI
-pip install image2sound[ui]
-# or command line only
-pip install image2sound
 ```
 
 ## Quickstart

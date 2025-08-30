@@ -9,9 +9,7 @@ import shutil
 from pathlib import Path
 from typing import Optional, Tuple
 
-import gradio as gr
-
-from .cli import extract_features, map_features_to_music, compose_track, render_wav
+# Heavy imports moved inside functions to avoid loading during CLI --help
 
 
 def reveal_in_filesystem(file_path: str) -> str:
@@ -96,7 +94,7 @@ def generate_music(
     seed_text: str,
     output_dir: str,
     filename_stem: str,
-    progress: gr.Progress = gr.Progress(track_tqdm=True)
+    progress=None
 ) -> Tuple[str, Optional[str], str, str]:
     """Generate music from an image using the image2sound pipeline.
     
@@ -119,7 +117,14 @@ def generate_music(
         return "❌ Image file not found", None, "The uploaded image file could not be found.", ""
     
     try:
-        progress(0.1, desc="🔍 Extracting image features...")
+        if progress:
+            progress(0.1, desc="🔍 Extracting image features...")
+        
+        # Import heavy modules only when needed, not during CLI --help
+        from .features import extract_features
+        from .mapping import map_features_to_music
+        from .compose import compose_track
+        from .synth import render_wav
         
         # Parse seed if provided, otherwise use None for image-derived seed
         seed = None
@@ -137,17 +142,20 @@ def generate_music(
         if seed is not None:
             features.seed = seed
         
-        progress(0.4, desc="🎵 Mapping features to music...")
+        if progress:
+            progress(0.4, desc="🎵 Mapping features to music...")
         
         # Map to musical parameters
         music_params = map_features_to_music(features, style=style, target_duration=duration)
         
-        progress(0.7, desc="🎼 Composing musical arrangement...")
+        if progress:
+            progress(0.7, desc="🎼 Composing musical arrangement...")
         
         # Compose the track
         notes = compose_track(music_params)
         
-        progress(0.9, desc="🔊 Rendering audio file...")
+        if progress:
+            progress(0.9, desc="🔊 Rendering audio file...")
         
         # Build final output path
         final_output_path = build_output_path(output_dir, filename_stem, image_file)
@@ -167,7 +175,8 @@ def generate_music(
                 # If copy fails, we'll still return the temp file for Gradio to serve
                 pass
         
-        progress(1.0, desc="✨ Generation complete!")
+        if progress:
+            progress(1.0, desc="✨ Generation complete!")
         
         # Build summary text
         summary_lines = [
@@ -217,16 +226,20 @@ def generate_music(
         
     except Exception as e:
         error_msg = f"❌ Generation failed: {str(e)}"
-        progress(0.0, desc="Failed")
+        if progress:
+            progress(0.0, desc="Failed")
         return error_msg, None, error_msg, ""
 
 
-def build_interface() -> gr.Blocks:
+def build_interface():
     """Build and return the Gradio interface without launching it.
     
     Returns:
         Configured Gradio Blocks interface
     """
+    # Import gradio only when UI is actually needed
+    import gradio as gr
+    
     # Create custom theme with soft colors and teal accent
     theme = gr.themes.Soft(
         primary_hue="teal",

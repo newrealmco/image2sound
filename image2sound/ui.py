@@ -144,7 +144,7 @@ def generate_music(
         output_path = build_output_path(output_dir, filename_stem, image_file)
         
         # Render to WAV
-        render_wav(notes, str(output_path), sample_rate=44100)
+        render_wav(notes, 44100, str(output_path))
         
         progress(1.0, desc="✨ Generation complete!")
         

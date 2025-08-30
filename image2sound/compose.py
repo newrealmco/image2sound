@@ -568,7 +568,15 @@ def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, s
                 arp_duration = spb / len(arp_intervals)  # Divide beat among arpeggio notes
                 
                 for i, interval in enumerate(arp_intervals):
-                    scale_idx = (scale_notes.index(base_note) + interval) % len(scale_notes)
+                    # Handle case where base_note might not be in scale (due to chromatic passing tones)
+                    try:
+                        base_scale_idx = scale_notes.index(base_note)
+                    except ValueError:
+                        # Find closest scale note if base_note is chromatic
+                        base_scale_idx = min(range(len(scale_notes)), 
+                                           key=lambda i: abs(scale_notes[i] - base_note))
+                    
+                    scale_idx = (base_scale_idx + interval) % len(scale_notes)
                     arp_note = scale_notes[scale_idx]
                     
                     # Transpose to voice's register with variation

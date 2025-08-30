@@ -4,6 +4,8 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
+import shutil
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -59,15 +61,22 @@ def build_output_path(output_dir: str, filename_stem: str, image_path: str) -> P
     """Build the complete output path for the generated audio file.
     
     Args:
-        output_dir: Directory to save the file in
+        output_dir: Directory to save the file in (empty for default Downloads)
         filename_stem: Base filename (without extension)
         image_path: Path to source image (for fallback naming)
         
     Returns:
         Complete path for the output .wav file
     """
+    # Use provided directory or default to Downloads/image2sound
+    if output_dir.strip():
+        output_path = Path(output_dir.strip())
+    else:
+        # Default to Downloads/image2sound folder
+        downloads_dir = Path.home() / "Downloads" / "image2sound"
+        output_path = downloads_dir
+    
     # Ensure output directory exists
-    output_path = Path(output_dir)
     output_path.mkdir(parents=True, exist_ok=True)
     
     # Use provided filename or derive from image
@@ -140,11 +149,23 @@ def generate_music(
         
         progress(0.9, desc="🔊 Rendering audio file...")
         
-        # Build output path
-        output_path = build_output_path(output_dir, filename_stem, image_file)
+        # Build final output path
+        final_output_path = build_output_path(output_dir, filename_stem, image_file)
         
-        # Render to WAV
-        render_wav(notes, 44100, str(output_path))
+        # Generate audio in a temporary file first (for Gradio compatibility)
+        with tempfile.NamedTemporaryFile(suffix='.wav', delete=False) as temp_file:
+            temp_path = temp_file.name
+        
+        # Render to temporary WAV file
+        render_wav(notes, 44100, temp_path)
+        
+        # Copy to final location if different from temp
+        if str(final_output_path) != temp_path:
+            try:
+                shutil.copy2(temp_path, final_output_path)
+            except Exception as e:
+                # If copy fails, we'll still return the temp file for Gradio to serve
+                pass
         
         progress(1.0, desc="✨ Generation complete!")
         
@@ -180,11 +201,19 @@ def generate_music(
         
         summary_text = "\n".join(summary_lines)
         
-        # Success status
-        file_size_mb = os.path.getsize(output_path) / (1024 * 1024)
-        status_message = f"✅ Generated successfully! File: {output_path.name} ({file_size_mb:.1f} MB)"
+        # Success status with file locations
+        temp_file_size_mb = os.path.getsize(temp_path) / (1024 * 1024)
         
-        return summary_text, str(output_path), status_message, ""
+        if str(final_output_path) != temp_path and os.path.exists(final_output_path):
+            status_message = f"✅ Generated successfully! Saved to: {final_output_path.name} ({temp_file_size_mb:.1f} MB)"
+            # Store final path for reveal functionality
+            reveal_path = str(final_output_path)
+        else:
+            status_message = f"✅ Generated successfully! Temporary file ({temp_file_size_mb:.1f} MB)"
+            reveal_path = temp_path
+        
+        # Return temp path for Gradio to serve, store final path info in status
+        return summary_text, temp_path, status_message, reveal_path
         
     except Exception as e:
         error_msg = f"❌ Generation failed: {str(e)}"
@@ -278,9 +307,10 @@ def build_interface() -> gr.Blocks:
                     )
                     
                     output_dir_input = gr.Textbox(
-                        label="Output Directory",
-                        value=str(Path.home() / "Music" / "image2sound"),
-                        info="Where to save generated music files"
+                        label="Output Directory (optional)",
+                        value="",
+                        placeholder="Leave empty to use downloads folder",
+                        info="Where to save generated music files permanently"
                     )
                     
                     filename_input = gr.Textbox(
@@ -340,7 +370,7 @@ def build_interface() -> gr.Blocks:
         # Wire up the generate button
         def on_generate(*args):
             """Handle generate button click with proper UI updates."""
-            summary, audio_path, status, _ = generate_music(*args)
+            summary, audio_path, status, reveal_path = generate_music(*args)
             
             # Update UI based on whether generation was successful
             if audio_path:
@@ -348,7 +378,7 @@ def build_interface() -> gr.Blocks:
                     summary,  # summary_display
                     status,   # status_display
                     audio_path,  # audio_player value
-                    audio_path,  # audio_path_state
+                    reveal_path,  # audio_path_state (for reveal functionality)
                     gr.update(visible=True),  # audio_player visibility
                     gr.update(visible=True),  # file_actions visibility
                     gr.update(visible=True),  # reveal_status visibility

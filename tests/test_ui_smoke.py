@@ -55,7 +55,7 @@ def test_build_output_path():
         from pathlib import Path
         
         with tempfile.TemporaryDirectory() as temp_dir:
-            # Test with explicit filename
+            # Test with explicit directory and filename
             output_path = build_output_path(temp_dir, "test_music", "/path/to/image.jpg")
             assert output_path.name == "test_music.wav"
             assert output_path.parent == Path(temp_dir)
@@ -71,6 +71,12 @@ def test_build_output_path():
             # Test with no image path (should use default)
             output_path = build_output_path(temp_dir, "", "")
             assert output_path.name == "generated_music.wav"
+            
+            # Test with empty directory (should use Downloads)
+            output_path = build_output_path("", "test_music", "/path/to/image.jpg")
+            assert output_path.name == "test_music.wav"
+            assert "Downloads" in str(output_path)
+            assert "image2sound" in str(output_path)
             
     except ImportError as e:
         pytest.skip(f"UI dependencies not installed: {e}")

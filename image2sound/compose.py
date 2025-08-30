@@ -481,6 +481,10 @@ def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, s
     notes = []
     track_name = f"voice_{voice_id}_{voice.instrument}"
     
+    # Derive the voice's signature color motif
+    voice_motif = _derive_color_motif(voice, scale_notes, rng)
+    motif_occurrence_count = 0  # Track how many times motif has been played for mutations
+    
     # Compose notes only for sections where this voice is active
     for section in sections:
         if voice_id not in section.active_voices:
@@ -500,8 +504,54 @@ def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, s
         else:
             register_variation = 0
         
-        # Compose notes for this section
-        beat = section.start_beat
+        # Play color call-sign motif at the start of the section
+        section_start_time = section.start_beat * spb
+        
+        # Apply mutations to motif based on occurrence count
+        current_motif = voice_motif.copy()  # Start with original
+        if motif_occurrence_count > 0:
+            # Choose mutation type based on occurrence count
+            if motif_occurrence_count % 2 == 1:
+                current_motif = _mutate_motif(current_motif, "invert", scale_notes)
+            else:
+                current_motif = _mutate_motif(current_motif, "transpose_5th", scale_notes)
+        
+        # Get current chord for motif fitting (use first chord of section)
+        beats_per_bar = params.meter[0]
+        bar_index = section.start_beat // beats_per_bar
+        chord_index = bar_index % len(params.progression)
+        chord_symbol = params.progression[chord_index]
+        current_chord = _chord_to_midi(chord_symbol, params.root, params.mode, 0, rng)
+        
+        # Fit motif to current chord
+        fitted_motif = _fit_motif_to_chord(current_motif, current_chord, scale_notes)
+        
+        # Play the 3-note motif
+        motif_note_duration = spb * 0.4  # Each motif note is 40% of a beat
+        for i, motif_midi in enumerate(fitted_motif):
+            motif_time = section_start_time + (i * motif_note_duration)
+            humanized_motif_time = _humanize_timing(motif_time, rng)
+            
+            # Transpose to voice register
+            motif_midi_transposed = motif_midi - 60 + base_register + register_variation
+            motif_midi_transposed = np.clip(motif_midi_transposed, 21, 108)
+            
+            # Motif notes have distinctive velocity and duration
+            motif_velocity = voice.gain * 0.9  # Prominent but not overpowering
+            
+            notes.append(Note(
+                start=humanized_motif_time,
+                dur=motif_note_duration * 1.2,  # Slightly overlapping for legato
+                midi=int(motif_midi_transposed),
+                vel=motif_velocity,
+                track=track_name,
+                pan=voice.pan
+            ))
+        
+        motif_occurrence_count += 1
+        
+        # Compose regular notes for this section (start after motif)
+        beat = section.start_beat + 2  # Start 2 beats after motif (give it space)
         while beat < section.end_beat:
             t = beat * spb
             
@@ -582,6 +632,134 @@ def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, s
             beat += beat_interval
     
     return notes
+
+
+def _derive_color_motif(voice: VoiceSpec, scale_notes: list[int], rng: np.random.Generator) -> list[int]:
+    """Derive a 3-note motif from voice color properties.
+    
+    Args:
+        voice: Voice specification with color properties
+        scale_notes: Scale notes available for the motif
+        rng: Random number generator seeded by voice color
+        
+    Returns:
+        List of 3 MIDI notes representing the color call-sign motif
+    """
+    # Map hue to starting scale degree (0-360° → 0-6 scale degrees)
+    hue_bucket = int(voice.color.hue / 360.0 * len(scale_notes)) % len(scale_notes)
+    starting_degree = hue_bucket
+    
+    # Create seeded RNG for consistent intervals based on voice color
+    color_seed = int(voice.color.hue * 1000 + voice.color.sat * 100 + voice.color.val * 10) & 0xFFFFFFFF
+    motif_rng = np.random.default_rng(color_seed)
+    
+    # Define possible intervals (scale degrees)
+    interval_choices = [1, 2, 3, -1, -2]  # Step up/down within scale
+    
+    # Generate two intervals to create 3-note motif
+    interval1 = motif_rng.choice(interval_choices)
+    interval2 = motif_rng.choice(interval_choices)
+    
+    # Build motif as scale degrees
+    motif_degrees = [
+        starting_degree,
+        (starting_degree + interval1) % len(scale_notes),
+        (starting_degree + interval1 + interval2) % len(scale_notes)
+    ]
+    
+    # Convert to MIDI notes
+    motif_notes = [scale_notes[degree] for degree in motif_degrees]
+    return motif_notes
+
+
+def _mutate_motif(original_motif: list[int], mutation_type: str, scale_notes: list[int]) -> list[int]:
+    """Apply mutation to a motif (inversion or transposition by 5th).
+    
+    Args:
+        original_motif: Original 3-note motif
+        mutation_type: "invert" or "transpose_5th"
+        scale_notes: Available scale notes
+        
+    Returns:
+        Mutated motif
+    """
+    if mutation_type == "invert":
+        # Invert intervals around first note
+        root_note = original_motif[0]
+        intervals = [note - root_note for note in original_motif]
+        inverted_intervals = [-interval for interval in intervals]
+        inverted_motif = [root_note + interval for interval in inverted_intervals]
+        
+        # Ensure notes stay in reasonable range and map to scale
+        adjusted_motif = []
+        for note in inverted_motif:
+            # Find closest scale note
+            closest_scale_note = min(scale_notes, key=lambda x: abs(x - note))
+            adjusted_motif.append(closest_scale_note)
+        return adjusted_motif
+        
+    elif mutation_type == "transpose_5th":
+        # Transpose by a perfect 5th (7 semitones)
+        transposed = [note + 7 for note in original_motif]
+        
+        # Map to scale notes and ensure reasonable range
+        adjusted_motif = []
+        for note in transposed:
+            # Find closest scale note
+            closest_scale_note = min(scale_notes, key=lambda x: abs(x - note))
+            # Keep in reasonable range
+            while closest_scale_note > 84:  # Too high
+                closest_scale_note -= 12
+            while closest_scale_note < 36:  # Too low
+                closest_scale_note += 12
+            adjusted_motif.append(closest_scale_note)
+        return adjusted_motif
+    
+    return original_motif
+
+
+def _fit_motif_to_chord(motif: list[int], chord_notes: list[int], scale_notes: list[int]) -> list[int]:
+    """Adjust motif notes to fit the current chord when possible.
+    
+    Args:
+        motif: Original motif notes
+        chord_notes: Current chord notes (MIDI)
+        scale_notes: Available scale notes
+        
+    Returns:
+        Chord-fitted motif
+    """
+    if not chord_notes:
+        return motif
+    
+    fitted_motif = []
+    
+    for note in motif:
+        # Check if note is already a chord tone (within octave)
+        note_class = note % 12
+        is_chord_tone = any((chord_note % 12) == note_class for chord_note in chord_notes)
+        
+        if is_chord_tone:
+            # Note fits chord, keep it
+            fitted_motif.append(note)
+        else:
+            # Find nearest chord tone
+            chord_tones_extended = []
+            for chord_note in chord_notes:
+                # Add chord tones in multiple octaves around the motif note
+                for octave in [-12, 0, 12]:
+                    candidate = chord_note + octave
+                    if 36 <= candidate <= 84:  # Reasonable range
+                        chord_tones_extended.append(candidate)
+            
+            if chord_tones_extended:
+                nearest_chord_tone = min(chord_tones_extended, key=lambda x: abs(x - note))
+                fitted_motif.append(nearest_chord_tone)
+            else:
+                # Fallback: use original note
+                fitted_motif.append(note)
+    
+    return fitted_motif
 
 
 def _compose_chord_track(params: MusicParams, sections: list[Section], rng: np.random.Generator) -> List[Note]:

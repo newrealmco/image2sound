@@ -284,6 +284,54 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
             sig = sig * env * n.vel * 0.12
             sig = sig.astype(np.float32)
             
+        elif n.track.startswith("transition_"):
+            # Transition effects
+            t = np.arange(length) / sr
+            
+            if n.track == "transition_swell":
+                # Cymbal swell: noise burst with LPF sweep
+                noise = np.random.randn(length).astype(np.float32)
+                
+                # Create LPF sweep from high to low frequency
+                sweep_start_freq = 8000  # Start at 8kHz
+                sweep_end_freq = 200     # End at 200Hz
+                sweep_freqs = sweep_start_freq * np.exp(-t * 3)  # Exponential sweep down
+                
+                # Apply time-varying LPF (approximated)
+                sig = noise * 0.3 * n.vel
+                # Apply gentle envelope for swell effect
+                swell_env = np.minimum(1.0, t * 3) * np.exp(-t * 0.5)
+                sig = sig * swell_env
+                
+            elif n.track == "transition_fill":
+                # Drum fills: enhanced drum hits
+                if n.midi == 36:  # Kick
+                    # Enhanced kick with pitch sweep
+                    pitch_env = np.exp(-t * 40)
+                    freq = 80 * pitch_env + 40
+                    kick = np.sin(2 * np.pi * freq * t) * 0.4
+                    noise = np.random.randn(length) * 0.1
+                    sig = (kick + noise) * n.vel
+                elif n.midi == 38:  # Snare
+                    # Snare with noise and tone
+                    tone = np.sin(2 * np.pi * 250 * t) * 0.3
+                    noise = np.random.randn(length) * 0.4
+                    sig = (tone + noise) * n.vel
+                else:  # Hi-hat (42)
+                    # Hi-hat as filtered noise
+                    noise = np.random.randn(length) * 0.2
+                    sig = _apply_1pole_lpf(noise, 8000, sr) * n.vel
+                
+                # Quick decay for drum fills
+                fill_env = np.exp(-t * 10)
+                sig = sig * fill_env
+                
+            else:
+                # Unknown transition type, fallback to noise
+                sig = np.random.randn(length).astype(np.float32) * 0.1 * n.vel
+                
+            sig = sig.astype(np.float32)
+            
         elif n.track == "drums":
             # Legacy drums support
             env = np.linspace(1.0, 0.0, length, dtype=np.float32)

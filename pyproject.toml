@@ -23,7 +23,7 @@ classifiers = [
 dependencies = [
   "Pillow",
   "numpy",
-  "opencv-python",
+  "opencv-python-headless",
   "scikit-learn",
   "soundfile",
   "librosa",

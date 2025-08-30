@@ -1,11 +1,34 @@
 # image2sound
 Turn images into short musical pieces via algorithmic sonification.
 
+## Installation
+
+### Development Setup (Current)
+```bash
+# Clone the repository
+git clone https://github.com/newrealmco/image2sound.git
+cd image2sound
+
+# Create virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+
+# Install with UI support
+pip install -e .[ui]
+```
+
+### Future PyPI Installation
+```bash
+# Once published to PyPI (coming soon)
+pip install image2sound[ui]  # With web UI
+# or
+pip install image2sound      # Command line only
+```
+
 ## Quickstart
 
 ### GUI (Recommended)
 ```bash
-pip install -e .[ui]
 image2sound-ui
 ```
 Opens a beautiful web interface in your browser where you can:
@@ -17,7 +40,6 @@ Opens a beautiful web interface in your browser where you can:
 
 ### Command Line
 ```bash
-pip install -e .
 python -m image2sound.cli examples/demo.jpg -o out.wav --style ambient --duration 20
 ```
 
@@ -57,11 +79,17 @@ python scripts/batch_demo.py
 
 The batch script processes all images in `examples/` with each of the 4 styles (neutral, ambient, cinematic, rock), creating descriptive filenames that include the musical parameters and outputting detailed CSV metadata for analysis.
 
-## Install & test locally
+## Development & Testing
 ```bash
-python3.11 -m venv .venv && source .venv/bin/activate
-pip install -e . pytest
+# Install with development dependencies
+pip install -e .[ui] -r requirements-dev.txt
+
+# Run tests
 pytest -q
+
+# Test CLI
 python -m image2sound.cli examples/demo.jpg -o out.wav --style ambient
-open out.wav  # (macOS) listen
+
+# Test UI (opens in browser)
+image2sound-ui
 ```

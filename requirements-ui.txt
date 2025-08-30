@@ -1,0 +1,6 @@
+# UI-specific requirements for image2sound
+# Include all core requirements
+-r requirements.txt
+
+# UI framework
+gradio>=4.0

@@ -16,3 +16,6 @@ mypy>=1.0.0
 # Documentation
 sphinx>=4.0.0
 sphinx-rtd-theme>=1.0.0
+
+# UI development (optional dependency)
+gradio>=4.0

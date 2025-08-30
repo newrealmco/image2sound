@@ -100,3 +100,8 @@ temp/
 gradio_cache/
 flagged/
 gradio_temp/
+venv/
+to/
+your/
+*.wav
+

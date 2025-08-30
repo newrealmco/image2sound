@@ -1,5 +1,5 @@
 from image2sound.mapping import map_features_to_music, _rgb_to_hue, MODES, METERS
-from image2sound.features import ImageFeatures
+from image2sound.features import ImageFeatures, ColorCluster
 
 def _create_test_features(**kwargs):
     """Helper to create ImageFeatures with all required fields."""
@@ -15,6 +15,46 @@ def _create_test_features(**kwargs):
         'seed': 12345,
     }
     defaults.update(kwargs)
+    
+    # Create mock color clusters from palette_rgb
+    colors = []
+    palette = defaults['palette_rgb']
+    for i, rgb in enumerate(palette):
+        # Convert RGB to HSV for mock data
+        r, g, b = rgb
+        r, g, b = r/255.0, g/255.0, b/255.0
+        mx, mn = max(r, g, b), min(r, g, b)
+        diff = mx - mn
+        
+        # Value
+        val = mx
+        
+        # Saturation
+        sat = 0 if mx == 0 else diff / mx
+        
+        # Hue
+        if diff == 0:
+            hue = 0
+        elif mx == r:
+            hue = (60 * ((g - b) / diff) + 360) % 360
+        elif mx == g:
+            hue = (60 * ((b - r) / diff) + 120) % 360
+        else:
+            hue = (60 * ((r - g) / diff) + 240) % 360
+        
+        # Mock color cluster
+        color = ColorCluster(
+            rgb=rgb,
+            hue=hue,
+            sat=sat,
+            val=val,
+            prop=1.0 / len(palette),  # Equal distribution
+            cx=0.5 + i * 0.1 - 0.2,  # Spread across image
+            cy=0.5
+        )
+        colors.append(color)
+    
+    defaults['colors'] = colors
     return ImageFeatures(**defaults)
 
 def test_rgb_to_hue():
@@ -55,6 +95,18 @@ def test_enhanced_mapping_ranges():
     assert len(p.progression) >= 3  # Reasonable progression length
     assert -0.6 <= p.pan_lead <= 0.6
     assert -5 <= p.lead_offset <= 5
+    
+    # Test voices
+    assert isinstance(p.voices, list)
+    assert len(p.voices) > 0  # Should have at least one voice
+    for voice in p.voices:
+        assert voice.instrument in ["pluck", "bell", "marimba", "pad_glass", "pad_warm", "lead_clean", "brass_short"]
+        assert -1.0 <= voice.mode_bias <= 1.0
+        assert -1.0 <= voice.pan <= 1.0
+        assert 0.0 <= voice.gain <= 1.0
+        assert -2 <= voice.octave <= 2
+        assert 0.0 <= voice.brightness <= 1.0
+        assert 0.1 <= voice.activity <= 2.0
 
 def test_duration_passthrough():
     """Test that target_duration is passed through correctly."""

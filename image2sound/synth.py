@@ -50,6 +50,125 @@ def _apply_1pole_lpf(signal: np.ndarray, cutoff: float, sr: int) -> np.ndarray:
     return y
 
 
+def _synthesize_instrument(instrument: str, f: float, t: np.ndarray, brightness: float) -> np.ndarray:
+    """Synthesize audio signal for a specific instrument type.
+    
+    Args:
+        instrument: Instrument type (pluck, bell, marimba, pad_glass, pad_warm, lead_clean, brass_short)
+        f: Fundamental frequency in Hz
+        t: Time array for the note duration
+        brightness: Filter brightness [0,1] where 1.0 = open filter
+        
+    Returns:
+        Raw audio signal (before envelope)
+    """
+    if instrument == "pluck":
+        # Plucked string: sine + small triangle with quick decay shape
+        sine = np.sin(2 * np.pi * f * t)
+        triangle = 2.0 * np.abs(2 * (f * t - np.floor(f * t + 0.5))) - 1.0
+        signal = sine + 0.3 * triangle
+        
+    elif instrument == "bell":
+        # Bell-like: sine with harmonic series (1, 2, 3, 5)
+        signal = (np.sin(2 * np.pi * f * t) + 
+                 0.5 * np.sin(2 * np.pi * f * 2 * t) + 
+                 0.3 * np.sin(2 * np.pi * f * 3 * t) + 
+                 0.2 * np.sin(2 * np.pi * f * 5 * t))
+        
+    elif instrument == "marimba":
+        # Marimba: triangle with even harmonics
+        triangle = 2.0 * np.abs(2 * (f * t - np.floor(f * t + 0.5))) - 1.0
+        signal = triangle + 0.4 * np.sin(2 * np.pi * f * 2 * t)
+        
+    elif instrument == "pad_glass":
+        # Glass pad: pure sine waves with detuning
+        signal = (np.sin(2 * np.pi * f * t) + 
+                 0.7 * np.sin(2 * np.pi * f * 1.005 * t) +  # Slight detune
+                 0.5 * np.sin(2 * np.pi * f * 0.995 * t))   # Opposite detune
+        
+    elif instrument == "pad_warm":
+        # Warm pad: saw wave with filtering
+        saw = 2 * (f * t - np.floor(f * t + 0.5))
+        signal = saw
+        
+    elif instrument == "lead_clean":
+        # Clean lead: sine + small square
+        sine = np.sin(2 * np.pi * f * t)
+        square = np.sign(np.sin(2 * np.pi * f * t))
+        signal = sine + 0.2 * square
+        
+    elif instrument == "brass_short":
+        # Brass: saw with odd harmonics emphasized
+        saw = 2 * (f * t - np.floor(f * t + 0.5))
+        signal = saw + 0.3 * np.sin(2 * np.pi * f * 3 * t)
+        
+    else:
+        # Fallback: simple sine
+        signal = np.sin(2 * np.pi * f * t)
+    
+    # Apply brightness-controlled filtering for applicable instruments
+    if instrument in ["pad_warm", "brass_short", "marimba"]:
+        # Calculate cutoff frequency based on brightness
+        base_cutoff = f * 2  # Start at 2x fundamental
+        max_cutoff = min(8000, f * 8)  # Cap at reasonable frequency
+        cutoff = base_cutoff + (max_cutoff - base_cutoff) * brightness
+        signal = _apply_1pole_lpf(signal, cutoff, 44100)  # Assume 44.1kHz sample rate
+    
+    return signal
+
+
+def _get_envelope(instrument: str, length: int, sr: int) -> np.ndarray:
+    """Generate ADSR envelope appropriate for the instrument type.
+    
+    Args:
+        instrument: Instrument type
+        length: Length of envelope in samples
+        sr: Sample rate
+        
+    Returns:
+        Envelope array [0,1]
+    """
+    t = np.arange(length) / sr
+    
+    if instrument == "pluck":
+        # Quick attack, exponential decay
+        attack_time = 0.01  # 10ms
+        env = np.minimum(1.0, t / attack_time) * np.exp(-t / 0.3)
+        
+    elif instrument == "bell":
+        # Medium attack, long decay
+        attack_time = 0.05  # 50ms
+        env = np.minimum(1.0, t / attack_time) * np.exp(-t / 0.8)
+        
+    elif instrument == "marimba":
+        # Quick attack, medium decay
+        attack_time = 0.02  # 20ms
+        env = np.minimum(1.0, t / attack_time) * np.exp(-t / 0.4)
+        
+    elif instrument in ["pad_glass", "pad_warm"]:
+        # Slow attack, sustained
+        attack_time = 0.15  # 150ms
+        decay_time = 0.8
+        env = np.minimum(1.0, t / attack_time) * np.exp(-t / decay_time)
+        
+    elif instrument == "lead_clean":
+        # Medium attack, controlled decay
+        attack_time = 0.03  # 30ms
+        env = np.minimum(1.0, t / attack_time) * np.exp(-t / 0.5)
+        
+    elif instrument == "brass_short":
+        # Quick attack, quick decay (staccato)
+        attack_time = 0.02  # 20ms
+        env = np.minimum(1.0, t / attack_time) * np.exp(-t / 0.25)
+        
+    else:
+        # Default envelope
+        attack_time = 0.01
+        env = np.minimum(1.0, t / attack_time) * np.exp(-t / 0.4)
+    
+    return env
+
+
 def _circular_delay(signal: np.ndarray, delay_samples: int, feedback: float) -> np.ndarray:
     """Apply simple circular buffer delay effect.
     
@@ -82,18 +201,21 @@ def _circular_delay(signal: np.ndarray, delay_samples: int, feedback: float) -> 
 
 
 def render_wav(notes: List[Note], sr: int, out_path) -> None:
-    """Render a list of notes to a stereo WAV audio file with enhanced synthesis.
+    """Render a list of notes to a stereo WAV audio file with voice-based synthesis.
     
-    Synthesizes musical notes using track-specific timbres:
-    - Lead: Sine + triangle with vibrato and delay
-    - Chords/Pads: Softened saw wave with slower attack
-    - Bass: Triangle wave with shorter decay  
-    - Drums: Noise burst with pitch envelope for kicks
+    Synthesizes musical notes using voice-specific instruments:
+    - pluck: Sine + triangle with quick decay
+    - bell: Sine with harmonic series (bell-like overtones)
+    - marimba: Triangle with even harmonics
+    - pad_glass: Pure sine waves with slight detuning
+    - pad_warm: Filtered saw wave with warmth
+    - lead_clean: Sine + small square wave
+    - brass_short: Saw with emphasized odd harmonics
     
-    Supports stereo panning with equal-power law (-3dB at center).
+    Each instrument has appropriate ADSR envelope and brightness-controlled filtering.
     
     Args:
-        notes: List of Note objects to synthesize
+        notes: List of Note objects with voice-specific track names
         sr: Sample rate in Hz (e.g., 44100)
         out_path: Output file path for WAV file
         
@@ -136,9 +258,34 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
             progress = int((processed / total_notes) * 100)
             print(f"   [{progress}%] 🎼 Synthesizing note {processed}/{total_notes}...")
 
-        # Generate signal based on track type
-        if n.track == "drums":
-            # Drums: noise burst with pitch envelope for kicks
+        # Parse track name to extract instrument and brightness
+        if n.track.startswith("voice_"):
+            # Format: "voice_X_instrumentname" 
+            parts = n.track.split("_")
+            if len(parts) >= 3:
+                instrument = parts[2]
+            else:
+                instrument = "pluck"  # Fallback
+            
+            # Extract brightness from note velocity (using it as a proxy)
+            brightness = n.vel  # vel already represents gain, use as brightness too
+            
+            # Generate instrument-specific signal
+            f = _midi_to_freq(n.midi)
+            t = np.arange(length) / sr
+            
+            # Synthesize the instrument
+            sig = _synthesize_instrument(instrument, f, t, brightness)
+            
+            # Apply appropriate envelope
+            env = _get_envelope(instrument, length, sr)
+            
+            # Apply envelope and velocity
+            sig = sig * env * n.vel * 0.12
+            sig = sig.astype(np.float32)
+            
+        elif n.track == "drums":
+            # Legacy drums support
             env = np.linspace(1.0, 0.0, length, dtype=np.float32)
             sig = np.random.randn(length).astype(np.float32) * 0.25 * env * n.vel
             
@@ -149,63 +296,26 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
                 freq = 60 * pitch_env + 40   # 60Hz dropping to 40Hz
                 kick_tone = np.sin(2 * np.pi * freq * t) * 0.3
                 sig += kick_tone.astype(np.float32)
-                
-        elif n.track == "lead":
-            # Lead: sine + triangle with vibrato
-            f = _midi_to_freq(n.midi)
-            t = np.arange(length) / sr
-            
-            # Vibrato: ~5Hz, ±10 cents
-            vibrato = np.sin(2 * np.pi * 5.0 * t) * 0.01  # ±1% frequency
-            f_vibrato = f * (1.0 + vibrato)
-            
-            # ADSR: attack=10ms, decay tau~0.4s
-            env = np.minimum(1.0, t / 0.01) * np.exp(-t / 0.4)
-            
-            # Sine + small triangle
-            sine = np.sin(2 * np.pi * f_vibrato * t)
-            triangle = 2.0 * np.abs(2 * (f_vibrato * t - np.floor(f_vibrato * t + 0.5))) - 1.0
-            sig = (sine + 0.2 * triangle) * env * n.vel * 0.15
-            sig = sig.astype(np.float32)
-            
-            # Store for delay processing
-            lead_notes.append((start, length, sig.copy()))
-            
-        elif n.track in ["chords", "pad"]:
-            # Chords/pads: softened saw with slower attack
-            f = _midi_to_freq(n.midi)
-            t = np.arange(length) / sr
-            
-            # Slower attack: 80-120ms
-            attack_time = 0.1  # 100ms
-            env = np.minimum(1.0, t / attack_time) * np.exp(-t / 0.6)
-            
-            # Saw wave
-            saw = 2 * (f * t - np.floor(f * t + 0.5))
-            
-            # Soften with 1-pole LPF
-            sig = _apply_1pole_lpf(saw, f * 4, sr) * env * n.vel * 0.12
-            sig = sig.astype(np.float32)
-            
-        elif n.track == "bass":
-            # Bass: triangle with shorter decay
-            f = _midi_to_freq(n.midi)
-            t = np.arange(length) / sr
-            
-            # Shorter decay for bass
-            env = np.minimum(1.0, t / 0.01) * np.exp(-t / 0.2)
-            
-            # Triangle wave
-            triangle = 2.0 * np.abs(2 * (f * t - np.floor(f * t + 0.5))) - 1.0
-            sig = triangle * env * n.vel * 0.18
-            sig = sig.astype(np.float32)
-            
+        
         else:
-            # Default tonal
+            # Legacy track support (lead, chords, bass, etc.)
             f = _midi_to_freq(n.midi)
             t = np.arange(length) / sr
-            env = np.minimum(1.0, t / 0.01) * np.exp(-t / 0.4)
-            sig = np.sin(2*np.pi*f*t) * env * n.vel * 0.15
+            
+            if n.track == "lead":
+                # Vibrato for lead
+                vibrato = np.sin(2 * np.pi * 5.0 * t) * 0.01
+                f_vibrato = f * (1.0 + vibrato)
+                sig = np.sin(2 * np.pi * f_vibrato * t)
+                env = np.minimum(1.0, t / 0.01) * np.exp(-t / 0.4)
+                # Store for delay processing
+                lead_notes.append((start, length, (sig * env * n.vel * 0.15).copy()))
+            else:
+                # Simple sine for other legacy tracks
+                sig = np.sin(2*np.pi*f*t)
+                env = np.minimum(1.0, t / 0.01) * np.exp(-t / 0.4)
+            
+            sig = sig * env * n.vel * 0.15
             sig = sig.astype(np.float32)
         
         # Apply stereo panning
@@ -218,9 +328,9 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
         
         processed += 1
     
-    # Apply delay to lead notes
+    # Apply delay to legacy lead notes (if any)
     if lead_notes:
-        print(f"   🎸 Applying delay to {len(lead_notes)} lead notes...")
+        print(f"   🎸 Applying delay to {len(lead_notes)} legacy lead notes...")
         # Calculate 1/8 note delay time (assuming 4/4 time)
         eighth_note = 60.0 / 120.0 / 2.0  # Default to 120 BPM, 1/8 note
         delay_samples = int(sr * eighth_note)

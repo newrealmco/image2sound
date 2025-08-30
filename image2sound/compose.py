@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import List
 import math
-from .mapping import MusicParams
+import numpy as np
+from .mapping import MusicParams, VoiceSpec, MODES
 
 @dataclass
 class Note:
@@ -22,92 +23,158 @@ class Note:
     track: str
     pan: float = 0.0
 
-def _scale_midi(root: str, major: bool) -> list[int]:
-    """Build a major or minor scale starting from root note.
+def _scale_midi(root: str, mode: str) -> list[int]:
+    """Build a scale from root note using the specified mode.
     
     Args:
         root: Root note name (C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)
-        major: True for major scale, False for minor scale
+        mode: Musical mode name from MODES dictionary
         
     Returns:
-        List of 7 MIDI note numbers in the scale, centered around middle C (60)
+        List of MIDI note numbers in the scale, centered around middle C (60)
     """
     names = ["C","C#","D","Eb","E","F","F#","G","Ab","A","Bb","B"]
     root_ix = names.index(root)
-    pattern = [0,2,4,5,7,9,11] if major else [0,2,3,5,7,8,10]
-    return [60 + ((root_ix + i) % 12) for i in pattern]
+    pattern = MODES.get(mode, MODES["ionian"])  # Fallback to ionian (major)
+    return [60 + ((root_ix + semitone) % 12) for semitone in pattern]
 
-def compose_track(p: MusicParams) -> List[Note]:
-    """Compose a simple multi-track musical arrangement from parameters.
-    
-    Creates a basic 4/4 time arrangement with chords, lead melody, bass, and drums:
-    - Chords: Triad (root, third, fifth) on beats 0, 4, 8... lasting 2 beats
-    - Lead: Ascending scale pattern, one note per beat, octave up
-    - Bass: Root note on even beats, octave down
-    - Drums: Kick (36) and snare (38) alternating per beat
+
+def _apply_mode_bias(scale_notes: list[int], mode_bias: float, beat: int, rng: np.random.Generator) -> int:
+    """Select a note from the scale with mode bias for passing tones.
     
     Args:
-        p: Musical parameters including BPM, scale, duration, etc.
+        scale_notes: List of MIDI notes in the current scale
+        mode_bias: Bias for passing tones [-1.0, 1.0] where -1=avoid, +1=prefer
+        beat: Current beat number for pattern selection
+        rng: Random number generator for choices
+        
+    Returns:
+        MIDI note number
+    """
+    # Base pattern: cycle through scale degrees
+    base_note = scale_notes[beat % len(scale_notes)]
+    
+    # Apply mode bias for passing tones (chromatic approach)
+    if abs(mode_bias) > 0.3 and rng.random() < abs(mode_bias) * 0.5:
+        if mode_bias > 0:  # Prefer passing tones
+            # Add chromatic approach (+1 or -1 semitone)
+            offset = rng.choice([-1, 1])
+            return base_note + offset
+        else:  # Avoid passing tones, stick to scale
+            return base_note
+    
+    return base_note
+
+
+def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, rng: np.random.Generator) -> List[Note]:
+    """Compose a track for a specific voice based on its specifications.
+    
+    Args:
+        voice: Voice specification with instrument and performance parameters
+        params: Global musical parameters (key, BPM, etc.)
+        voice_id: Unique identifier for this voice
+        rng: Seeded random number generator
+        
+    Returns:
+        List of Note objects for this voice
+    """
+    scale_notes = _scale_midi(params.root, params.mode)
+    spb = 60.0 / params.bpm  # Seconds per beat
+    total_beats = int(params.duration / spb)
+    
+    # Apply activity scaling to note density
+    beat_interval = max(1, int(1.0 / voice.activity))  # How often to place notes
+    
+    # Calculate base register with octave offset
+    base_register = 60 + (voice.octave * 12)  # Middle C + octave shifts
+    
+    notes = []
+    track_name = f"voice_{voice_id}_{voice.instrument}"
+    
+    beat = 0
+    while beat < total_beats:
+        t = beat * spb
+        
+        # Select note with mode bias
+        midi_note = _apply_mode_bias(scale_notes, voice.mode_bias, beat, rng)
+        
+        # Transpose to voice's register
+        midi_note = midi_note - 60 + base_register
+        
+        # Ensure note is in valid MIDI range
+        midi_note = np.clip(midi_note, 21, 108)  # Piano range
+        
+        # Note duration varies with activity
+        base_duration = spb * (0.8 + 0.4 * rng.random())  # 80-120% of beat
+        if voice.activity > 1.5:  # High activity = shorter notes
+            base_duration *= 0.7
+        elif voice.activity < 0.7:  # Low activity = longer notes
+            base_duration *= 1.4
+            
+        # Velocity scales with voice gain
+        velocity = voice.gain * (0.7 + 0.3 * rng.random())  # Add slight variation
+        
+        notes.append(Note(
+            start=t,
+            dur=base_duration,
+            midi=int(midi_note),
+            vel=velocity,
+            track=track_name,
+            pan=voice.pan
+        ))
+        
+        # Advance beat based on activity
+        beat += beat_interval
+    
+    return notes
+
+def compose_track(p: MusicParams) -> List[Note]:
+    """Compose a multi-voice musical arrangement from parameters.
+    
+    Creates one track per voice, with each voice having its own instrument,
+    register, activity level, and musical behavior based on color properties.
+    
+    Args:
+        p: Musical parameters including voices, BPM, key, duration, etc.
         
     Returns:
         List of Note objects sorted by start time
     """
-    print(f"🎼 Composing musical arrangement...")
-    print(f"   🎵 Key: {p.scale}, {p.bpm} BPM, {p.duration:.1f}s duration")
+    print(f"🎼 Composing multi-voice arrangement...")
+    print(f"   🎵 Key: {p.root} {p.mode}, {p.bpm} BPM, {p.duration:.1f}s duration")
+    print(f"   🎤 Voices: {len(p.voices)} color-derived instruments")
     
-    major = "major" in p.scale
-    scale = _scale_midi(p.root, major)
+    # Create seeded RNG for composition choices
+    rng = np.random.default_rng(hash(p.root + p.mode + str(p.bpm)) & 0xFFFFFFFF)
+    
     spb = 60.0 / p.bpm  # seconds per beat
-    notes: List[Note] = []
     beats = int(p.duration / spb)
     
     print(f"   📏 Timing: {spb:.3f}s per beat, {beats} total beats")
-    print(f"   🎹 Scale notes: {scale}")
+    print(f"   🎹 Scale: {p.root} {p.mode} ({MODES[p.mode]})")
 
-    # Track counters for progress
-    chord_count = 0
-    lead_count = 0  
-    bass_count = 0
-    drum_count = 0
+    all_notes: List[Note] = []
+    voice_note_counts = []
 
-    for b in range(beats):
-        t = b * spb
+    # Compose track for each voice
+    for i, voice in enumerate(p.voices):
+        print(f"   [{int((i+1)/len(p.voices)*80)}%] 🎵 Composing voice {i+1}: {voice.instrument}...")
         
-        # Show progress every 25% of beats
-        if beats >= 4 and b % (beats // 4) == 0 and b > 0:
-            progress = int((b / beats) * 100)
-            print(f"   [{progress}%] 🎵 Composing beat {b}/{beats}...")
+        voice_notes = _compose_voice_track(voice, p, i+1, rng)
+        all_notes.extend(voice_notes)
+        voice_note_counts.append(len(voice_notes))
         
-        # Chords: triad on beat %4==0, duration=2 beats (slight left pan)
-        if b % 4 == 0:
-            for i, m in enumerate([scale[0], scale[2], scale[4]]):
-                # Apply transposition from lead_offset
-                transposed = m + p.lead_offset
-                notes.append(Note(t, 2*spb, transposed, 0.5, "chords", -0.2))
-                chord_count += 1
-        
-        # Lead: ascending scale pattern, +12 semitones (octave up) with pan_lead
-        lead = scale[(b*2) % len(scale)] + 12 + p.lead_offset
-        notes.append(Note(t, spb, lead, 0.8, "lead", p.pan_lead))
-        lead_count += 1
-        
-        # Bass: root note on even beats, -12 semitones (octave down, center)
-        if b % 2 == 0:
-            notes.append(Note(t, spb, scale[0]-12, 0.7, "bass", 0.0))
-            bass_count += 1
-        
-        # Drums: alternating kick (36) and snare (38) every beat (slight right pan)
-        notes.append(Note(t, 0.05, 36 if b % 2 == 0 else 38, 1.0, "drums", 0.1))
-        drum_count += 1
+        # Show voice details
+        color = voice.color
+        print(f"      🎨 Color: RGB{color.rgb} (prop={color.prop:.2f}, pos=({color.cx:.2f},{color.cy:.2f}))")
+        print(f"      🎶 Notes: {len(voice_notes)}, gain={voice.gain:.2f}, pan={voice.pan:+.2f}, octave={voice.octave:+d}")
 
     print(f"   [100%] ✨ Composition complete!")
-    print(f"   📊 Generated {len(notes)} total notes:")
-    print(f"   🎹 Chords: {chord_count} notes")
-    print(f"   🎶 Lead melody: {lead_count} notes") 
-    print(f"   🎸 Bass: {bass_count} notes")
-    print(f"   🥁 Drums: {drum_count} notes")
+    print(f"   📊 Generated {len(all_notes)} total notes across {len(p.voices)} voices:")
+    for i, (voice, count) in enumerate(zip(p.voices, voice_note_counts)):
+        print(f"   🎵 Voice {i+1} ({voice.instrument}): {count} notes")
     
     # Sort by start time
-    sorted_notes = sorted(notes, key=lambda n: n.start)
+    sorted_notes = sorted(all_notes, key=lambda n: n.start)
     print(f"   🎼 Notes arranged chronologically")
     return sorted_notes

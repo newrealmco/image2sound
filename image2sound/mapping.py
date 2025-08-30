@@ -1,6 +1,30 @@
 from dataclasses import dataclass
 import numpy as np
-from .features import ImageFeatures
+from .features import ImageFeatures, ColorCluster
+
+
+@dataclass
+class VoiceSpec:
+    """Voice specification derived from color cluster properties.
+    
+    Attributes:
+        instrument: Instrument type (pluck, bell, marimba, pad_glass, pad_warm, lead_clean, brass_short)
+        mode_bias: Preference for passing tones [-1.0, 1.0] where -1=avoid, +1=prefer
+        pan: Stereo pan position [-1.0, 1.0] where -1=left, 0=center, 1=right
+        gain: Volume level [0.0, 1.0]
+        octave: Octave offset from base register [-2, +2]
+        brightness: Filter brightness/cutoff [0.0, 1.0] where 1.0=open filter
+        activity: Note density multiplier [0.1, 2.0] where 1.0=normal density
+        color: Source color cluster for reference
+    """
+    instrument: str
+    mode_bias: float
+    pan: float
+    gain: float
+    octave: int
+    brightness: float
+    activity: float
+    color: ColorCluster
 
 # Musical modes with semitone patterns
 MODES = {
@@ -43,28 +67,104 @@ class MusicParams:
         bpm: Beats per minute (80-160 range)
         scale: Scale name in format "{root}_{major|minor}" (legacy)
         root: Root note (C, C#, D, Eb, E, F, F#, G, Ab, A, Bb, B)
-        instruments: List of instrument names for synthesis
+        instruments: List of instrument names for synthesis (legacy)
         intensity: Musical intensity/dynamics [0,1]
         duration: Target duration in seconds
         mode: Musical mode (ionian, dorian, phrygian, lydian, mixolydian, aeolian, harm_minor)
         meter: Time signature as (numerator, denominator)
         progression: List of chord symbols (e.g., ["I", "V", "vi", "IV"])
-        pan_lead: Lead instrument stereo pan [-0.6, 0.6]
-        lead_offset: Lead melody transposition in semitones [-5, +5]
+        pan_lead: Lead instrument stereo pan [-0.6, 0.6] (legacy)
+        lead_offset: Lead melody transposition in semitones [-5, +5] (legacy)
+        voices: List of VoiceSpec objects, one per color cluster
     """
     bpm: int
     scale: str
     root: str
-    instruments: list[str]
+    instruments: list[str]  # Legacy
     intensity: float
     duration: float
     mode: str
     meter: tuple[int, int]
     progression: list[str]
-    pan_lead: float
-    lead_offset: int
+    pan_lead: float  # Legacy
+    lead_offset: int  # Legacy
+    voices: list[VoiceSpec]
 
 _HUES_TO_KEYS = ["C","G","D","A","E","B","F#","C#","Ab","Eb","Bb","F"]
+
+# Instrument mapping based on hue ranges
+INSTRUMENT_MAP = {
+    # Red-Orange (0-60°): Warm, energetic instruments
+    (0, 60): ["brass_short", "pluck", "lead_clean"],
+    # Yellow-Green (60-150°): Bright, natural instruments  
+    (60, 150): ["bell", "marimba", "pluck"],
+    # Cyan-Blue (150-240°): Cool, ethereal instruments
+    (150, 240): ["pad_glass", "bell", "lead_clean"],
+    # Purple-Magenta (240-360°): Deep, mysterious instruments
+    (240, 360): ["pad_warm", "brass_short", "marimba"]
+}
+
+def voice_spec_from_color(color: ColorCluster, rng: np.random.Generator) -> VoiceSpec:
+    """Map color cluster properties to voice specifications.
+    
+    Uses hue to select instrument family, saturation/value for brightness/activity,
+    proportion for gain, and spatial position for panning.
+    
+    Args:
+        color: ColorCluster with HSV and spatial properties
+        rng: Seeded random number generator for consistent choices
+        
+    Returns:
+        VoiceSpec with instrument and performance parameters
+    """
+    # Map hue to instrument type
+    hue = color.hue
+    instrument_choices = None
+    for (hue_min, hue_max), instruments in INSTRUMENT_MAP.items():
+        if hue_min <= hue < hue_max:
+            instrument_choices = instruments
+            break
+    
+    if instrument_choices is None:
+        instrument_choices = ["pluck"]  # Fallback
+    
+    # Select instrument with slight randomization
+    instrument = rng.choice(instrument_choices)
+    
+    # Mode bias: high saturation prefers passing tones, low saturation avoids them
+    mode_bias = (color.sat - 0.5) * 1.5  # Map [0,1] to [-0.75, 0.75]
+    mode_bias = np.clip(mode_bias, -1.0, 1.0)
+    
+    # Pan from spatial position with some spread
+    pan = (color.cx - 0.5) * 1.6  # Map [0,1] to [-0.8, 0.8]
+    pan = np.clip(pan, -1.0, 1.0)
+    
+    # Gain from proportion (louder for more prominent colors)
+    gain = 0.3 + 0.7 * color.prop  # Map proportion to [0.3, 1.0]
+    gain = np.clip(gain, 0.0, 1.0)
+    
+    # Octave from vertical position (higher = higher pitch)
+    octave_raw = (0.5 - color.cy) * 4  # Map [0,1] to [2, -2]
+    octave = int(np.clip(np.round(octave_raw), -2, 2))
+    
+    # Brightness from HSV value (brighter colors = brighter timbre)
+    brightness = color.val  # Already [0,1]
+    
+    # Activity from saturation (more saturated = more active)
+    activity = 0.5 + color.sat * 1.5  # Map [0,1] to [0.5, 2.0]
+    activity = np.clip(activity, 0.1, 2.0)
+    
+    return VoiceSpec(
+        instrument=instrument,
+        mode_bias=mode_bias,
+        pan=pan,
+        gain=gain,
+        octave=octave,
+        brightness=brightness,
+        activity=activity,
+        color=color
+    )
+
 
 def _rgb_to_hue(rgb: tuple[int,int,int]) -> float:
     """Convert RGB tuple to HSV hue value.
@@ -131,6 +231,13 @@ def map_features_to_music(feats: ImageFeatures, style: str = "neutral", target_d
     
     # Create seeded RNG from image for deterministic choices
     rng = np.random.default_rng(feats.seed)
+    
+    print("   [10%] 🎤 Creating voice specifications from color clusters...")
+    voices = []
+    for i, color in enumerate(feats.colors):
+        voice = voice_spec_from_color(color, rng)
+        voices.append(voice)
+        print(f"      Voice {i+1}: {voice.instrument} (gain={voice.gain:.2f}, pan={voice.pan:+.2f}, octave={voice.octave:+d})")
     
     print("   [15%] 🌈 Finding musical key from dominant color...")
     root_rgb = max(feats.palette_rgb, key=lambda c: sum(c))
@@ -202,12 +309,13 @@ def map_features_to_music(feats: ImageFeatures, style: str = "neutral", target_d
         bpm=bpm,
         scale=f"{root}_{scale}",  # Legacy field
         root=root,
-        instruments=instruments,
+        instruments=instruments,  # Legacy
         intensity=intensity,
         duration=target_duration,
         mode=mode,
         meter=meter,
         progression=progression,
-        pan_lead=pan_lead,
-        lead_offset=lead_offset
+        pan_lead=pan_lead,  # Legacy
+        lead_offset=lead_offset,  # Legacy
+        voices=voices
     )

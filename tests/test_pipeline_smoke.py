@@ -55,7 +55,8 @@ def test_compose_smoke():
         lead_offset=0,  # Legacy
         voices=[mock_voice],
         has_complement=False,  # No complementary colors in test
-        chord_enrichment_level=1  # Test with 7th/add9 level
+        chord_enrichment_level=1,  # Test with 7th/add9 level
+        texture_energy=0.5  # Medium texture energy for testing
     )
     
     # Compose the track
@@ -75,11 +76,12 @@ def test_compose_smoke():
         tolerance = 1.5
         assert last_note_end <= params.duration + tolerance, f"Last note end {last_note_end} should be <= {params.duration + tolerance}"
     
-    # Additional validation: verify we have voice and chord tracks
+    # Additional validation: verify we have voice, chord, and rhythm tracks
     track_names = set(note.track for note in notes)
     expected_voice_tracks = {f"voice_{i}_{voice.instrument}" for i, voice in enumerate(params.voices)}
     assert expected_voice_tracks.issubset(track_names), f"Expected voice tracks {expected_voice_tracks}, got {track_names}"
     assert "chords" in track_names, f"Should have chord track, got tracks: {track_names}"
+    assert "drums_rhythm" in track_names, f"Should have rhythm track, got tracks: {track_names}"
     
     # Verify we have notes for each voice
     for i, voice in enumerate(params.voices):
@@ -92,10 +94,12 @@ def test_compose_smoke():
     # Calculate expected beats based on the actual composition (which may expand for bar alignment)
     last_note_start = max(note.start for note in notes if note.track.startswith("voice_"))
     actual_beats = int(last_note_start / spb) + 2  # Add buffer for last notes
-    # Allow extra notes for transitions and chords
+    # Allow extra notes for transitions, chords, and rhythm
     max_transition_notes = 10
     # Estimate chord notes: roughly 3-5 notes per chord, 1 chord per bar
     estimated_bars = actual_beats // params.meter[0] + 1
     max_chord_notes = estimated_bars * 5  # Up to 5 notes per chord
-    total_expected = actual_beats * len(params.voices) + max_transition_notes + max_chord_notes
-    assert len(notes) <= total_expected, f"Too many notes: {len(notes)} for ~{actual_beats} beats, {len(params.voices)} voices, up to {max_transition_notes} transitions, and ~{max_chord_notes} chord notes"
+    # Estimate drum notes: varies by pattern complexity, up to 20 hits per bar for dense patterns
+    max_drum_notes = estimated_bars * 20  
+    total_expected = actual_beats * len(params.voices) + max_transition_notes + max_chord_notes + max_drum_notes
+    assert len(notes) <= total_expected, f"Too many notes: {len(notes)} for ~{actual_beats} beats, {len(params.voices)} voices, up to {max_transition_notes} transitions, ~{max_chord_notes} chord notes, and ~{max_drum_notes} drum hits"

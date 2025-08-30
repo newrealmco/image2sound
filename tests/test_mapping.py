@@ -111,6 +111,10 @@ def test_enhanced_mapping_ranges():
     # Test new chord coloring fields
     assert isinstance(p.has_complement, bool)
     assert p.chord_enrichment_level in [0, 1, 2]
+    
+    # Test texture energy field
+    assert isinstance(p.texture_energy, float)
+    assert 0.0 <= p.texture_energy <= 1.0
 
 def test_duration_passthrough():
     """Test that target_duration is passed through correctly."""

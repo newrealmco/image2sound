@@ -220,6 +220,110 @@ def _create_transition_notes(start_time: float, duration: float, rng: np.random.
     return notes
 
 
+# Drum pattern definitions by meter - each pattern is (beat_positions, density_level, name)
+DRUM_PATTERNS = {
+    (4, 4): [  # 4/4 time patterns
+        ([0, 2], 0, "basic_kick_snare"),           # Kick on 1,3 - minimal
+        ([0, 1, 2, 3], 1, "four_on_floor"),       # All beats - low density
+        ([0, 2, 2.5, 3.5], 2, "backbeat"),        # Kick, snare, off-beat hits
+        ([0, 1.5, 2, 2.75, 3.5], 3, "shuffle"),   # Shuffle feel - medium
+        ([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5], 4, "eighth_notes"),  # 8th note hi-hats
+        ([0, 0.33, 0.67, 1, 1.33, 1.67, 2, 2.33, 2.67, 3, 3.33, 3.67], 5, "triplet_feel"),  # Triplets
+        ([0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75], 6, "sixteenth_notes"),  # 16th notes
+        ([0, 0.125, 0.375, 0.5, 0.625, 1, 1.125, 1.375, 1.5, 1.625, 2, 2.125, 2.375, 2.5, 2.625, 3, 3.125, 3.375, 3.5, 3.625], 7, "complex_syncopation")  # Very dense
+    ],
+    (3, 4): [  # 3/4 time patterns  
+        ([0], 0, "waltz_minimal"),                 # Just downbeat
+        ([0, 2], 1, "waltz_basic"),                # 1 and 3
+        ([0, 1, 2], 2, "waltz_full"),              # All beats
+        ([0, 1, 1.5, 2, 2.5], 3, "waltz_swing"),  # With subdivisions
+        ([0, 0.5, 1, 1.5, 2, 2.5], 4, "waltz_compound"),  # 8th note feel
+        ([0, 0.33, 0.67, 1, 1.33, 1.67, 2, 2.33, 2.67], 5, "waltz_triplet"),  # Triplet subdivisions
+        ([0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75], 6, "waltz_sixteenth")  # Dense
+    ],
+    (6, 8): [  # 6/8 time patterns
+        ([0], 0, "6_8_minimal"),                   # Downbeat only
+        ([0, 3], 1, "6_8_basic"),                  # Strong beats
+        ([0, 1.5, 3, 4.5], 2, "6_8_compound"),    # Compound feel
+        ([0, 1, 2, 3, 4, 5], 3, "6_8_full"),      # All 8th notes
+        ([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5, 5.5], 4, "6_8_detailed"),  # 16th note subdivisions
+        ([0, 0.33, 1, 1.5, 2, 3, 3.33, 4, 4.5, 5], 5, "6_8_swing"),  # Swing subdivision
+        ([0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.25, 2.5, 2.75, 3, 3.25, 3.5, 3.75, 4, 4.25, 4.5, 4.75, 5, 5.25, 5.5, 5.75], 6, "6_8_complex")  # Very dense
+    ],
+    (5, 4): [  # 5/4 time patterns
+        ([0], 0, "5_4_minimal"),                   # Downbeat only
+        ([0, 2], 1, "5_4_basic"),                  # 1 and 3
+        ([0, 2, 3], 2, "5_4_asymmetric"),         # Asymmetric grouping
+        ([0, 1, 2, 3, 4], 3, "5_4_full"),         # All beats
+        ([0, 0.5, 1, 2, 2.5, 3, 4, 4.5], 4, "5_4_compound"),  # With subdivisions
+        ([0, 0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5], 5, "5_4_dense"),  # 8th note feel
+        ([0, 0.25, 0.75, 1, 1.5, 2, 2.25, 2.75, 3, 3.5, 4, 4.25, 4.75], 6, "5_4_syncopated")  # Complex
+    ]
+}
+
+
+def _select_drum_pattern(meter: tuple[int, int], texture_energy: float, max_voice_saturation: float, rng: np.random.Generator) -> tuple[list[float], str]:
+    """Select drum pattern based on texture energy and voice saturation.
+    
+    Args:
+        meter: Time signature (numerator, denominator)
+        texture_energy: Texture energy from image analysis [0,1]
+        max_voice_saturation: Maximum saturation among all voices [0,1]
+        rng: Random number generator
+        
+    Returns:
+        (beat_positions, pattern_name) tuple
+    """
+    # Compute composite density score
+    # texture_energy contributes to rhythmic complexity
+    # max_voice_saturation adds color-driven rhythmic intensity
+    density_score = (texture_energy * 0.6 + max_voice_saturation * 0.4)
+    
+    # Get patterns for this meter (convert to tuple if needed)
+    meter_tuple = tuple(meter) if not isinstance(meter, tuple) else meter
+    patterns = DRUM_PATTERNS.get(meter_tuple, DRUM_PATTERNS[(4, 4)])  # Fallback to 4/4
+    
+    # Map density score to pattern index (0-7 range)
+    pattern_index = int(density_score * (len(patterns) - 1))
+    pattern_index = np.clip(pattern_index, 0, len(patterns) - 1)
+    
+    # Add slight randomization (±1 level)
+    if rng.random() < 0.3:  # 30% chance to vary
+        variation = rng.choice([-1, 1])
+        pattern_index = np.clip(pattern_index + variation, 0, len(patterns) - 1)
+    
+    beat_positions, density_level, pattern_name = patterns[pattern_index]
+    return beat_positions, pattern_name
+
+
+def _determine_voice_style(voice: VoiceSpec) -> str:
+    """Determine voice playing style based on saturation.
+    
+    Args:
+        voice: Voice specification with color properties
+        
+    Returns:
+        "arpeggio" for high saturation, "sustained" for low saturation
+    """
+    saturation_threshold = 0.6
+    return "arpeggio" if voice.color.sat > saturation_threshold else "sustained"
+
+
+def _humanize_timing(original_time: float, rng: np.random.Generator) -> float:
+    """Apply micro-timing humanization.
+    
+    Args:
+        original_time: Original note start time in seconds
+        rng: Random number generator
+        
+    Returns:
+        Humanized timing with ±10-20ms variation
+    """
+    # Random humanization between -20ms to +20ms
+    humanization = rng.uniform(-0.020, 0.020)  # ±20ms
+    return max(0.0, original_time + humanization)
+
+
 def _chord_to_midi(chord_symbol: str, root_note: str, mode: str, enrichment_level: int = 0, rng: np.random.Generator = None) -> list[int]:
     """Convert chord symbol to MIDI note numbers.
     
@@ -386,6 +490,9 @@ def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, s
         effective_activity = voice.activity * section.density_multiplier
         beat_interval = max(1, int(1.0 / effective_activity))
         
+        # Determine voice playing style based on color saturation
+        voice_style = _determine_voice_style(voice)
+        
         # Add section-specific variation
         if section.name == "A'":
             # A' section: add variation by shifting register slightly
@@ -398,35 +505,78 @@ def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, s
         while beat < section.end_beat:
             t = beat * spb
             
-            # Select note with mode bias
-            midi_note = _apply_mode_bias(scale_notes, voice.mode_bias, beat, rng)
+            # Apply humanization to timing
+            humanized_time = _humanize_timing(t, rng)
             
-            # Transpose to voice's register with variation
-            midi_note = midi_note - 60 + base_register + register_variation
-            
-            # Ensure note is in valid MIDI range
-            midi_note = np.clip(midi_note, 21, 108)  # Piano range
-            
-            # Note duration varies with activity
-            base_duration = spb * (0.8 + 0.4 * rng.random())  # 80-120% of beat
-            if effective_activity > 1.5:  # High activity = shorter notes
-                base_duration *= 0.7
-            elif effective_activity < 0.7:  # Low activity = longer notes
-                base_duration *= 1.4
-            
-            # Velocity scales with voice gain and section
-            base_velocity = voice.gain * (0.7 + 0.3 * rng.random())
-            if section.name == "Tutti":
-                base_velocity *= 0.8  # Slightly quieter in tutti to avoid clutter
-            
-            notes.append(Note(
-                start=t,
-                dur=base_duration,
-                midi=int(midi_note),
-                vel=base_velocity,
-                track=track_name,
-                pan=voice.pan
-            ))
+            if voice_style == "arpeggio" and effective_activity > 0.8:
+                # High saturation = arpeggio style: play multiple notes in quick succession
+                chord_notes = []
+                base_note = _apply_mode_bias(scale_notes, voice.mode_bias, beat, rng)
+                
+                # Create simple arpeggio (1-3-5 pattern)
+                arp_intervals = [0, 2, 4]  # Root, third, fifth in scale degrees
+                arp_duration = spb / len(arp_intervals)  # Divide beat among arpeggio notes
+                
+                for i, interval in enumerate(arp_intervals):
+                    scale_idx = (scale_notes.index(base_note) + interval) % len(scale_notes)
+                    arp_note = scale_notes[scale_idx]
+                    
+                    # Transpose to voice's register with variation
+                    midi_note = arp_note - 60 + base_register + register_variation
+                    midi_note = np.clip(midi_note, 21, 108)
+                    
+                    # Stagger arpeggio notes slightly
+                    arp_time = humanized_time + (i * arp_duration)
+                    
+                    # Shorter duration for arpeggio notes
+                    note_duration = arp_duration * 0.9
+                    
+                    # Velocity with slight variation for each arpeggio note
+                    arp_velocity = voice.gain * (0.6 + 0.2 * rng.random())
+                    if section.name == "Tutti":
+                        arp_velocity *= 0.8
+                    
+                    notes.append(Note(
+                        start=arp_time,
+                        dur=note_duration,
+                        midi=int(midi_note),
+                        vel=arp_velocity,
+                        track=track_name,
+                        pan=voice.pan
+                    ))
+                
+            else:
+                # Sustained style: longer, held notes (low saturation)
+                midi_note = _apply_mode_bias(scale_notes, voice.mode_bias, beat, rng)
+                
+                # Transpose to voice's register with variation
+                midi_note = midi_note - 60 + base_register + register_variation
+                midi_note = np.clip(midi_note, 21, 108)
+                
+                # Note duration varies with activity and style
+                if voice_style == "sustained":
+                    base_duration = spb * (1.2 + 0.8 * rng.random())  # Longer sustained notes
+                else:
+                    base_duration = spb * (0.8 + 0.4 * rng.random())  # Standard duration
+                
+                if effective_activity > 1.5:  # High activity = shorter notes
+                    base_duration *= 0.7
+                elif effective_activity < 0.7:  # Low activity = longer notes
+                    base_duration *= 1.4
+                
+                # Velocity scales with voice gain and section
+                base_velocity = voice.gain * (0.7 + 0.3 * rng.random())
+                if section.name == "Tutti":
+                    base_velocity *= 0.8  # Slightly quieter in tutti to avoid clutter
+                
+                notes.append(Note(
+                    start=humanized_time,
+                    dur=base_duration,
+                    midi=int(midi_note),
+                    vel=base_velocity,
+                    track=track_name,
+                    pan=voice.pan
+                ))
             
             # Advance beat based on activity
             beat += beat_interval
@@ -527,6 +677,74 @@ def _compose_chord_track(params: MusicParams, sections: list[Section], rng: np.r
     return chord_notes
 
 
+def _compose_drum_track(params: MusicParams, sections: list[Section], texture_energy: float, rng: np.random.Generator) -> List[Note]:
+    """Compose rhythm track using color/texture-driven drum patterns.
+    
+    Args:
+        params: Musical parameters
+        sections: List of sections for timing
+        texture_energy: Texture energy from image analysis
+        rng: Random number generator
+        
+    Returns:
+        List of drum Notes
+    """
+    if not params.voices:
+        return []
+    
+    # Find maximum saturation among all voices for rhythm intensity
+    max_voice_saturation = max(voice.color.sat for voice in params.voices)
+    
+    # Select drum pattern based on texture and color saturation
+    beat_positions, pattern_name = _select_drum_pattern(params.meter, texture_energy, max_voice_saturation, rng)
+    
+    spb = 60.0 / params.bpm  # seconds per beat
+    beats_per_bar = params.meter[0]
+    drum_notes = []
+    
+    # Generate drum hits for each section
+    for section in sections:
+        section_beats = section.end_beat - section.start_beat
+        bars_in_section = section_beats // beats_per_bar
+        
+        for bar in range(bars_in_section):
+            bar_start_beat = section.start_beat + (bar * beats_per_bar)
+            
+            for beat_pos in beat_positions:
+                if beat_pos < beats_per_bar:  # Ensure beat is within bar
+                    absolute_beat = bar_start_beat + beat_pos
+                    drum_time = absolute_beat * spb
+                    
+                    # Apply humanization to timing
+                    humanized_time = _humanize_timing(drum_time, rng)
+                    
+                    # Vary drum sounds based on beat position and intensity
+                    if beat_pos == 0:  # Downbeat
+                        midi_note = 36  # Kick drum
+                        velocity = 0.7 + 0.2 * max_voice_saturation  # Louder for saturated colors
+                    elif int(beat_pos * 2) % 2 == 0:  # On strong subdivisions
+                        midi_note = 38 if rng.random() < 0.6 else 42  # Snare or hi-hat
+                        velocity = 0.5 + 0.2 * max_voice_saturation
+                    else:  # Weak subdivisions
+                        midi_note = 42  # Hi-hat
+                        velocity = 0.3 + 0.2 * max_voice_saturation
+                    
+                    # Add slight velocity variation for humanization
+                    velocity += rng.uniform(-0.1, 0.1)
+                    velocity = np.clip(velocity, 0.1, 1.0)
+                    
+                    drum_notes.append(Note(
+                        start=humanized_time,
+                        dur=0.1,  # Short drum hits
+                        midi=midi_note,
+                        vel=velocity,
+                        track="drums_rhythm",
+                        pan=rng.uniform(-0.2, 0.2)  # Slight stereo spread
+                    ))
+    
+    return drum_notes
+
+
 def compose_track(p: MusicParams) -> List[Note]:
     """Compose a sectional multi-voice musical arrangement from parameters.
     
@@ -588,13 +806,23 @@ def compose_track(p: MusicParams) -> List[Note]:
         print(f"      🎶 Notes: {len(voice_notes)}, gain={voice.gain:.2f}, pan={voice.pan:+.2f}, octave={voice.octave:+d}")
 
     # Add chord progression track
-    print(f"   [75%] 🎹 Composing chord progression...")
+    print(f"   [70%] 🎹 Composing chord progression...")
     chord_notes = _compose_chord_track(p, sections, rng)
     all_notes.extend(chord_notes)
     
     enrichment_desc = ["basic triads", "7th/add9 chords", "#11/6th extensions"][p.chord_enrichment_level]
     complement_desc = "with altered V chords" if p.has_complement else "standard progression"
     print(f"      🎵 {len(chord_notes)} chord notes using {enrichment_desc} ({complement_desc})")
+
+    # Add rhythm/drum track
+    print(f"   [75%] 🥁 Composing rhythm track...")
+    max_voice_saturation = max(voice.color.sat for voice in p.voices) if p.voices else 0.0
+    beat_positions, pattern_name = _select_drum_pattern(p.meter, p.texture_energy, max_voice_saturation, rng)
+    drum_notes = _compose_drum_track(p, sections, p.texture_energy, rng)
+    all_notes.extend(drum_notes)
+    
+    density_score = p.texture_energy * 0.6 + max_voice_saturation * 0.4
+    print(f"      🥁 {len(drum_notes)} drum hits using '{pattern_name}' pattern (density={density_score:.2f})")
 
     # Add transition effects
     print(f"   [80%] 🎵 Adding transition effects...")
@@ -611,9 +839,13 @@ def compose_track(p: MusicParams) -> List[Note]:
     print(f"      Added {transition_count} transition effect notes")
 
     print(f"   [100%] ✨ Composition complete!")
-    print(f"   📊 Generated {len(all_notes)} total notes across {len(p.voices)} voices + transitions:")
+    print(f"   📊 Generated {len(all_notes)} total notes across {len(p.voices)} voices + chords + rhythm + transitions:")
     for i, (voice, count) in enumerate(zip(p.voices, voice_note_counts)):
-        print(f"   🎵 Voice {i+1} ({voice.instrument}): {count} notes")
+        voice_style = _determine_voice_style(voice)
+        sat_desc = f"sat={voice.color.sat:.2f}"
+        print(f"   🎵 Voice {i+1} ({voice.instrument}): {count} notes [{voice_style} style, {sat_desc}]")
+    print(f"   🎹 Chords: {len(chord_notes)} notes")
+    print(f"   🥁 Rhythm: {len(drum_notes)} hits ({pattern_name})")
     
     # Sort by start time
     sorted_notes = sorted(all_notes, key=lambda n: n.start)

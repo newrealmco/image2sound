@@ -91,6 +91,7 @@ class MusicParams:
     voices: list[VoiceSpec]
     has_complement: bool  # Whether palette contains complementary colors
     chord_enrichment_level: int  # 0=basic, 1=7/add9, 2=#11/6
+    texture_energy: float  # Texture energy from image analysis [0,1]
 
 _HUES_TO_KEYS = ["C","G","D","A","E","B","F#","C#","Ab","Eb","Bb","F"]
 
@@ -377,5 +378,6 @@ def map_features_to_music(feats: ImageFeatures, style: str = "neutral", target_d
         lead_offset=lead_offset,  # Legacy
         voices=voices,
         has_complement=has_complement,
-        chord_enrichment_level=chord_enrichment_level
+        chord_enrichment_level=chord_enrichment_level,
+        texture_energy=feats.texture_energy
     )

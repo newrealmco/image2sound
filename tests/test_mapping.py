@@ -107,6 +107,10 @@ def test_enhanced_mapping_ranges():
         assert -2 <= voice.octave <= 2
         assert 0.0 <= voice.brightness <= 1.0
         assert 0.1 <= voice.activity <= 2.0
+    
+    # Test new chord coloring fields
+    assert isinstance(p.has_complement, bool)
+    assert p.chord_enrichment_level in [0, 1, 2]
 
 def test_duration_passthrough():
     """Test that target_duration is passed through correctly."""

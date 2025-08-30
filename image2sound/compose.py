@@ -220,6 +220,141 @@ def _create_transition_notes(start_time: float, duration: float, rng: np.random.
     return notes
 
 
+def _chord_to_midi(chord_symbol: str, root_note: str, mode: str, enrichment_level: int = 0, rng: np.random.Generator = None) -> list[int]:
+    """Convert chord symbol to MIDI note numbers.
+    
+    Args:
+        chord_symbol: Roman numeral chord symbol (I, V, vi, etc.)
+        root_note: Root note of the key (C, D, etc.)
+        mode: Musical mode (ionian, aeolian, etc.)
+        enrichment_level: 0=basic, 1=7/add9, 2=#11/6
+        
+    Returns:
+        List of MIDI note numbers for the chord
+    """
+    # Map root note to semitone offset
+    root_offsets = {"C": 0, "C#": 1, "D": 2, "Eb": 3, "E": 4, "F": 5,
+                   "F#": 6, "G": 7, "Ab": 8, "A": 9, "Bb": 10, "B": 11}
+    key_root = root_offsets[root_note]
+    
+    # Get scale pattern
+    scale_pattern = MODES.get(mode, MODES["ionian"])
+    
+    # Map Roman numerals to scale degrees (0-indexed)
+    roman_map = {
+        "I": 0, "i": 0, "II": 1, "ii": 1, "bII": 1,
+        "III": 2, "iii": 2, "bIII": 2, "IV": 3, "iv": 3,
+        "V": 4, "v": 4, "bV": 4, "VI": 5, "vi": 5, "bVI": 5,
+        "VII": 6, "vii": 6, "bVII": 6
+    }
+    
+    # Extract chord root degree
+    base_symbol = chord_symbol.rstrip("°+-#9b9#11")
+    degree = roman_map.get(base_symbol, 0)
+    
+    # Build basic triad
+    chord_root = (key_root + scale_pattern[degree % len(scale_pattern)]) % 12
+    third = (chord_root + 4 if chord_symbol.isupper() else chord_root + 3) % 12  # Major/minor third
+    fifth = (chord_root + 7) % 12
+    
+    chord_notes = [60 + chord_root, 60 + third, 60 + fifth]  # Middle C octave
+    
+    # Add enrichments based on level
+    if enrichment_level >= 1 and rng is not None:
+        # Add 7th or add9
+        if "7" in chord_symbol or rng.random() < 0.4:
+            seventh = (chord_root + (11 if chord_symbol.isupper() else 10)) % 12
+            chord_notes.append(60 + seventh)
+        elif "add9" in chord_symbol or rng.random() < 0.3:
+            ninth = (chord_root + 2) % 12
+            chord_notes.append(60 + ninth + 12)  # Octave up
+    
+    if enrichment_level >= 2 and rng is not None:
+        # Add #11 or 6th extensions
+        if "#11" in chord_symbol or rng.random() < 0.2:
+            sharp_eleven = (chord_root + 6) % 12
+            chord_notes.append(60 + sharp_eleven + 12)
+        elif "6" in chord_symbol or rng.random() < 0.3:
+            sixth = (chord_root + 9) % 12
+            chord_notes.append(60 + sixth)
+    
+    return sorted(chord_notes)
+
+
+def _create_altered_v_chord(root_note: str, mode: str, rng: np.random.Generator) -> list[int]:
+    """Create an altered V chord (b9/#9/#11) for complementary color sections.
+    
+    Args:
+        root_note: Root note of the key
+        mode: Musical mode
+        rng: Random number generator
+        
+    Returns:
+        List of MIDI notes for altered V chord
+    """
+    root_offsets = {"C": 0, "C#": 1, "D": 2, "Eb": 3, "E": 4, "F": 5,
+                   "F#": 6, "G": 7, "Ab": 8, "A": 9, "Bb": 10, "B": 11}
+    key_root = root_offsets[root_note]
+    
+    # V chord root is a fifth above the key root
+    v_root = (key_root + 7) % 12
+    
+    # Basic dominant 7th chord
+    chord_notes = [
+        60 + v_root,        # Root
+        60 + (v_root + 4) % 12,  # Major third
+        60 + (v_root + 7) % 12,  # Perfect fifth
+        60 + (v_root + 10) % 12  # Minor seventh
+    ]
+    
+    # Add alterations
+    alterations = ["b9", "#9", "#11"]
+    chosen_alt = rng.choice(alterations)
+    
+    if chosen_alt == "b9":
+        chord_notes.append(60 + (v_root + 1) % 12 + 12)  # b9 octave up
+    elif chosen_alt == "#9":
+        chord_notes.append(60 + (v_root + 3) % 12 + 12)  # #9 octave up
+    else:  # "#11"
+        chord_notes.append(60 + (v_root + 6) % 12 + 12)  # #11 octave up
+    
+    return sorted(chord_notes)
+
+
+def _voice_lead_to_nearest(from_chord: list[int], to_chord: list[int]) -> list[int]:
+    """Apply smooth voice-leading by choosing nearest chord tones.
+    
+    Args:
+        from_chord: Previous chord MIDI notes
+        to_chord: Target chord MIDI notes
+        
+    Returns:
+        Re-voiced target chord with smooth voice-leading
+    """
+    if not from_chord:
+        return to_chord
+    
+    # For each note in the target chord, find the best octave (±12 semitones)
+    voiced_chord = []
+    for target_note in to_chord:
+        best_note = target_note
+        min_distance = float('inf')
+        
+        # Try different octaves
+        for octave_shift in [-12, 0, 12]:
+            candidate = target_note + octave_shift
+            if 48 <= candidate <= 84:  # Reasonable range
+                # Find minimum distance to any note in from_chord
+                distance = min(abs(candidate - from_note) for from_note in from_chord)
+                if distance < min_distance:
+                    min_distance = distance
+                    best_note = candidate
+        
+        voiced_chord.append(best_note)
+    
+    return sorted(voiced_chord)
+
+
 def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, sections: list[Section], rng: np.random.Generator) -> List[Note]:
     """Compose a track for a specific voice within sectional structure.
     
@@ -298,6 +433,100 @@ def _compose_voice_track(voice: VoiceSpec, params: MusicParams, voice_id: int, s
     
     return notes
 
+
+def _compose_chord_track(params: MusicParams, sections: list[Section], rng: np.random.Generator) -> List[Note]:
+    """Compose chord progression track with color-aware enrichments and altered V chords.
+    
+    Args:
+        params: Musical parameters with chord enrichment settings
+        sections: List of sections for timing
+        rng: Random number generator
+        
+    Returns:
+        List of chord Notes
+    """
+    spb = 60.0 / params.bpm
+    chord_notes = []
+    
+    # Track previous chord for voice-leading
+    prev_chord_midi = []
+    
+    for section in sections:
+        # Determine if this section should have an altered V chord
+        use_altered_v = (params.has_complement and 
+                        rng.random() < 0.6 and  # 60% chance per section
+                        section.name != "Tutti")  # Not in tutti to avoid clutter
+        
+        section_beats = section.end_beat - section.start_beat
+        beats_per_bar = params.meter[0]
+        bars_in_section = section_beats // beats_per_bar
+        
+        for bar in range(bars_in_section):
+            bar_start_beat = section.start_beat + (bar * beats_per_bar)
+            bar_start_time = bar_start_beat * spb
+            bar_duration = beats_per_bar * spb
+            
+            # Select chord from progression
+            chord_index = bar % len(params.progression)
+            chord_symbol = params.progression[chord_index]
+            
+            # Check if this is the last bar in the section and we want altered V
+            if use_altered_v and bar == bars_in_section - 1:
+                # Insert altered V chord in second half of bar, resolving to I
+                half_bar_time = bar_duration / 2
+                
+                # First half: original chord
+                chord_midi = _chord_to_midi(chord_symbol, params.root, params.mode, 
+                                          params.chord_enrichment_level, rng)
+                chord_midi = _voice_lead_to_nearest(prev_chord_midi, chord_midi)
+                
+                for midi_note in chord_midi:
+                    chord_notes.append(Note(
+                        start=bar_start_time,
+                        dur=half_bar_time,
+                        midi=midi_note,
+                        vel=0.5,
+                        track="chords",
+                        pan=0.0
+                    ))
+                
+                # Second half: altered V chord
+                altered_v_midi = _create_altered_v_chord(params.root, params.mode, rng)
+                altered_v_midi = _voice_lead_to_nearest(chord_midi, altered_v_midi)
+                
+                for midi_note in altered_v_midi:
+                    chord_notes.append(Note(
+                        start=bar_start_time + half_bar_time,
+                        dur=half_bar_time,
+                        midi=midi_note,
+                        vel=0.6,  # Slightly louder for emphasis
+                        track="chords",
+                        pan=0.0
+                    ))
+                
+                prev_chord_midi = altered_v_midi
+                
+            else:
+                # Normal chord
+                chord_midi = _chord_to_midi(chord_symbol, params.root, params.mode,
+                                          params.chord_enrichment_level, rng)
+                chord_midi = _voice_lead_to_nearest(prev_chord_midi, chord_midi)
+                
+                for midi_note in chord_midi:
+                    chord_notes.append(Note(
+                        start=bar_start_time,
+                        dur=bar_duration,
+                        midi=midi_note,
+                        vel=0.5,
+                        track="chords",
+                        pan=0.0
+                    ))
+                
+                prev_chord_midi = chord_midi
+    
+    return chord_notes
+
+
 def compose_track(p: MusicParams) -> List[Note]:
     """Compose a sectional multi-voice musical arrangement from parameters.
     
@@ -357,6 +586,15 @@ def compose_track(p: MusicParams) -> List[Note]:
         color = voice.color
         print(f"      🎨 Color: RGB{color.rgb} (prop={color.prop:.2f}) - Active in: {', '.join(active_sections)}")
         print(f"      🎶 Notes: {len(voice_notes)}, gain={voice.gain:.2f}, pan={voice.pan:+.2f}, octave={voice.octave:+d}")
+
+    # Add chord progression track
+    print(f"   [75%] 🎹 Composing chord progression...")
+    chord_notes = _compose_chord_track(p, sections, rng)
+    all_notes.extend(chord_notes)
+    
+    enrichment_desc = ["basic triads", "7th/add9 chords", "#11/6th extensions"][p.chord_enrichment_level]
+    complement_desc = "with altered V chords" if p.has_complement else "standard progression"
+    print(f"      🎵 {len(chord_notes)} chord notes using {enrichment_desc} ({complement_desc})")
 
     # Add transition effects
     print(f"   [80%] 🎵 Adding transition effects...")

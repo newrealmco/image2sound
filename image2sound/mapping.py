@@ -89,6 +89,8 @@ class MusicParams:
     pan_lead: float  # Legacy
     lead_offset: int  # Legacy
     voices: list[VoiceSpec]
+    has_complement: bool  # Whether palette contains complementary colors
+    chord_enrichment_level: int  # 0=basic, 1=7/add9, 2=#11/6
 
 _HUES_TO_KEYS = ["C","G","D","A","E","B","F#","C#","Ab","Eb","Bb","F"]
 
@@ -213,6 +215,54 @@ def _select_meter(texture_energy: float, rng: np.random.Generator) -> tuple[int,
         return (4, 4)
 
 
+def _detect_complementary_colors(colors: list, threshold_prop: float = 0.1) -> bool:
+    """Detect if palette contains complementary color pairs.
+    
+    Args:
+        colors: List of ColorCluster objects
+        threshold_prop: Minimum proportion for colors to be considered
+        
+    Returns:
+        True if any pair of colors is ~180°±20° apart with sufficient proportion
+    """
+    significant_colors = [c for c in colors if c.prop > threshold_prop]
+    
+    for i in range(len(significant_colors)):
+        for j in range(i + 1, len(significant_colors)):
+            hue1, hue2 = significant_colors[i].hue, significant_colors[j].hue
+            
+            # Calculate hue difference (handle wraparound)
+            diff = abs(hue1 - hue2)
+            if diff > 180:
+                diff = 360 - diff
+            
+            # Check if colors are complementary (~180°±20°)
+            if 160 <= diff <= 200:
+                return True
+    
+    return False
+
+
+def _determine_chord_enrichment(palette_variance: float) -> int:
+    """Determine chord enrichment level based on palette variance.
+    
+    Args:
+        palette_variance: Variance in the color palette
+        
+    Returns:
+        0 for basic chords, 1 for 7/add9, 2 for #11/6
+    """
+    T1 = 0.4  # Threshold for 7/add9 enrichment
+    T2 = 0.7  # Threshold for #11/6 enrichment
+    
+    if palette_variance > T2:
+        return 2  # Allow #11/6
+    elif palette_variance > T1:
+        return 1  # Allow 7/add9
+    else:
+        return 0  # Basic chords only
+
+
 def _select_progression(mode: str, rng: np.random.Generator) -> list[str]:
     """Select chord progression based on mode character."""
     if mode in ["ionian", "lydian"]:
@@ -253,6 +303,14 @@ def map_features_to_music(feats: ImageFeatures, style: str = "neutral", target_d
     print("   [35%] ⏱️ Choosing time signature...")
     meter = _select_meter(feats.texture_energy, rng)
     print(f"   🥁 Texture energy {feats.texture_energy:.3f} → {meter[0]}/{meter[1]} time")
+    
+    print("   [40%] 🎨 Analyzing color relationships...")
+    has_complement = _detect_complementary_colors(feats.colors)
+    chord_enrichment_level = _determine_chord_enrichment(feats.palette_variance)
+    
+    complement_msg = "complementary colors detected" if has_complement else "no complementary pairs"
+    enrichment_levels = ["basic triads", "7th/add9 chords", "#11/6th extensions"]
+    print(f"   🌈 Color analysis: {complement_msg}, chord enrichment: {enrichment_levels[chord_enrichment_level]}")
     
     print("   [45%] 🎵 Selecting chord progression...")
     progression = _select_progression(mode, rng)
@@ -317,5 +375,7 @@ def map_features_to_music(feats: ImageFeatures, style: str = "neutral", target_d
         progression=progression,
         pan_lead=pan_lead,  # Legacy
         lead_offset=lead_offset,  # Legacy
-        voices=voices
+        voices=voices,
+        has_complement=has_complement,
+        chord_enrichment_level=chord_enrichment_level
     )

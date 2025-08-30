@@ -1,6 +1,6 @@
 [project]
-name = "mage2sound-newrealm"
-version = "0.4.3"
+name = "image2sound-newrealm"
+version = "0.4.4"
 description = "Turn images into short musical pieces via algorithmic sonification."
 readme = "README.md"
 requires-python = ">=3.10"

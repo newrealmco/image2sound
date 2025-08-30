@@ -50,69 +50,216 @@ def _apply_1pole_lpf(signal: np.ndarray, cutoff: float, sr: int) -> np.ndarray:
     return y
 
 
-def _synthesize_instrument(instrument: str, f: float, t: np.ndarray, brightness: float) -> np.ndarray:
-    """Synthesize audio signal for a specific instrument type.
+def _apply_simple_reverb(signal: np.ndarray, reverb_amount: float, sr: int) -> np.ndarray:
+    """Apply simple reverb using multiple delay lines.
+    
+    Args:
+        signal: Input signal
+        reverb_amount: Reverb amount [0,1] 
+        sr: Sample rate
+        
+    Returns:
+        Signal with reverb applied
+    """
+    if reverb_amount <= 0.01:
+        return signal
+    
+    # Simple reverb with multiple delays
+    delay_times = [0.03, 0.05, 0.07, 0.11]  # Delay times in seconds
+    delay_gains = [0.3, 0.25, 0.2, 0.15]    # Decay factors
+    
+    reverb_signal = np.zeros_like(signal)
+    
+    for delay_time, gain in zip(delay_times, delay_gains):
+        delay_samples = int(delay_time * sr)
+        if delay_samples < len(signal):
+            # Create delay buffer
+            delayed = np.zeros_like(signal)
+            delayed[delay_samples:] = signal[:-delay_samples] * gain * reverb_amount
+            reverb_signal += delayed
+    
+    return signal + reverb_signal
+
+
+def _apply_stereo_widener(left: np.ndarray, right: np.ndarray, width_amount: float, sr: int) -> tuple[np.ndarray, np.ndarray]:
+    """Apply ultralight stereo widening using delayed mid/side processing.
+    
+    Args:
+        left: Left channel signal
+        right: Right channel signal  
+        width_amount: Widening amount [0,1]
+        sr: Sample rate
+        
+    Returns:
+        (widened_left, widened_right) tuple
+    """
+    if width_amount <= 0.01:
+        return left, right
+    
+    # Convert to mid/side
+    mid = (left + right) * 0.5
+    side = (left - right) * 0.5
+    
+    # Apply tiny delay to side channel (1-3ms for subtle effect)
+    delay_ms = 1.5  # Very small delay for widening
+    delay_samples = int(delay_ms * sr / 1000)
+    
+    if delay_samples > 0 and delay_samples < len(side):
+        # Delayed and inverted side for widening effect
+        delayed_side = np.zeros_like(side)
+        delayed_side[delay_samples:] = -side[:-delay_samples]  # Inverted
+        
+        # Mix original and delayed side based on width amount
+        enhanced_side = side + delayed_side * width_amount * 0.3
+        
+        # Convert back to left/right
+        widened_left = mid + enhanced_side
+        widened_right = mid - enhanced_side
+        
+        return widened_left, widened_right
+    
+    return left, right
+
+
+def _synthesize_instrument(instrument: str, f: float, t: np.ndarray, brightness: float, saturation: float = 0.5, value: float = 0.5) -> np.ndarray:
+    """Synthesize audio signal with color-driven spectral control.
     
     Args:
         instrument: Instrument type (pluck, bell, marimba, pad_glass, pad_warm, lead_clean, brass_short)
         f: Fundamental frequency in Hz
         t: Time array for the note duration
-        brightness: Filter brightness [0,1] where 1.0 = open filter
+        brightness: Filter brightness [0,1] where 1.0 = open filter (legacy)
+        saturation: Color saturation [0,1] controls harmonic content
+        value: Color value/brightness [0,1] controls filtering and reverb
         
     Returns:
         Raw audio signal (before envelope)
     """
     if instrument == "pluck":
-        # Plucked string: sine + small triangle with quick decay shape
-        sine = np.sin(2 * np.pi * f * t)
-        triangle = 2.0 * np.abs(2 * (f * t - np.floor(f * t + 0.5))) - 1.0
-        signal = sine + 0.3 * triangle
+        # Plucked string: fundamental + saturation-controlled harmonics
+        fundamental = np.sin(2 * np.pi * f * t)
+        signal = fundamental
+        
+        # Add 3rd and 5th harmonics based on saturation
+        if saturation > 0.3:
+            third_harmonic = np.sin(2 * np.pi * f * 3 * t) * (saturation - 0.3) * 0.4
+            signal += third_harmonic
+        if saturation > 0.6:
+            fifth_harmonic = np.sin(2 * np.pi * f * 5 * t) * (saturation - 0.6) * 0.3
+            signal += fifth_harmonic
         
     elif instrument == "bell":
-        # Bell-like: sine with harmonic series (1, 2, 3, 5)
-        signal = (np.sin(2 * np.pi * f * t) + 
-                 0.5 * np.sin(2 * np.pi * f * 2 * t) + 
-                 0.3 * np.sin(2 * np.pi * f * 3 * t) + 
-                 0.2 * np.sin(2 * np.pi * f * 5 * t))
+        # Bell-like: fundamental + progressive harmonics based on saturation
+        fundamental = np.sin(2 * np.pi * f * t)
+        second_harmonic = np.sin(2 * np.pi * f * 2 * t) * 0.5  # Always present
+        signal = fundamental + second_harmonic
+        
+        # Add higher harmonics based on saturation
+        if saturation > 0.2:
+            third_harmonic = np.sin(2 * np.pi * f * 3 * t) * saturation * 0.4
+            signal += third_harmonic
+        if saturation > 0.5:
+            fifth_harmonic = np.sin(2 * np.pi * f * 5 * t) * (saturation - 0.5) * 0.3
+            signal += fifth_harmonic
         
     elif instrument == "marimba":
-        # Marimba: triangle with even harmonics
+        # Marimba: triangle base + saturation-controlled even harmonics
         triangle = 2.0 * np.abs(2 * (f * t - np.floor(f * t + 0.5))) - 1.0
-        signal = triangle + 0.4 * np.sin(2 * np.pi * f * 2 * t)
+        signal = triangle
+        
+        # Add even harmonics based on saturation
+        if saturation > 0.1:
+            second_harmonic = np.sin(2 * np.pi * f * 2 * t) * saturation * 0.5
+            signal += second_harmonic
+        if saturation > 0.4:
+            fourth_harmonic = np.sin(2 * np.pi * f * 4 * t) * (saturation - 0.4) * 0.3
+            signal += fourth_harmonic
         
     elif instrument == "pad_glass":
-        # Glass pad: pure sine waves with detuning
-        signal = (np.sin(2 * np.pi * f * t) + 
-                 0.7 * np.sin(2 * np.pi * f * 1.005 * t) +  # Slight detune
-                 0.5 * np.sin(2 * np.pi * f * 0.995 * t))   # Opposite detune
+        # Glass pad: detuned oscillators + saturation-controlled harmonics
+        fundamental = np.sin(2 * np.pi * f * t)
+        detune_up = np.sin(2 * np.pi * f * 1.005 * t) * 0.7    # Slight detune up
+        detune_down = np.sin(2 * np.pi * f * 0.995 * t) * 0.5  # Slight detune down
+        signal = fundamental + detune_up + detune_down
+        
+        # Add shimmer harmonics based on saturation (higher frequencies for glass-like timbre)
+        if saturation > 0.3:
+            shimmer = np.sin(2 * np.pi * f * 7 * t) * (saturation - 0.3) * 0.2
+            signal += shimmer
+        if saturation > 0.7:
+            high_shimmer = np.sin(2 * np.pi * f * 11 * t) * (saturation - 0.7) * 0.1
+            signal += high_shimmer
         
     elif instrument == "pad_warm":
-        # Warm pad: saw wave with filtering
+        # Warm pad: saw wave + saturation-controlled odd harmonics
         saw = 2 * (f * t - np.floor(f * t + 0.5))
-        signal = saw
+        signal = saw * 0.6  # Reduce base level to accommodate harmonics
+        
+        # Add warm odd harmonics based on saturation
+        if saturation > 0.2:
+            third_harmonic = np.sin(2 * np.pi * f * 3 * t) * saturation * 0.4
+            signal += third_harmonic
+        if saturation > 0.5:
+            fifth_harmonic = np.sin(2 * np.pi * f * 5 * t) * (saturation - 0.5) * 0.3
+            signal += fifth_harmonic
+        if saturation > 0.8:
+            seventh_harmonic = np.sin(2 * np.pi * f * 7 * t) * (saturation - 0.8) * 0.2
+            signal += seventh_harmonic
         
     elif instrument == "lead_clean":
-        # Clean lead: sine + small square
-        sine = np.sin(2 * np.pi * f * t)
-        square = np.sign(np.sin(2 * np.pi * f * t))
-        signal = sine + 0.2 * square
+        # Clean lead: sine base + saturation-controlled harmonics for edge
+        fundamental = np.sin(2 * np.pi * f * t)
+        signal = fundamental
+        
+        # Add slight square-like harmonics based on saturation
+        if saturation > 0.1:
+            third_harmonic = np.sin(2 * np.pi * f * 3 * t) * saturation * 0.3
+            signal += third_harmonic
+        if saturation > 0.4:
+            fifth_harmonic = np.sin(2 * np.pi * f * 5 * t) * (saturation - 0.4) * 0.2
+            signal += fifth_harmonic
+        if saturation > 0.7:
+            seventh_harmonic = np.sin(2 * np.pi * f * 7 * t) * (saturation - 0.7) * 0.15
+            signal += seventh_harmonic
         
     elif instrument == "brass_short":
-        # Brass: saw with odd harmonics emphasized
+        # Brass: saw base + saturation-controlled odd harmonics for brassy bite
         saw = 2 * (f * t - np.floor(f * t + 0.5))
-        signal = saw + 0.3 * np.sin(2 * np.pi * f * 3 * t)
+        signal = saw * 0.7  # Reduce base to accommodate harmonics
+        
+        # Add brass-like odd harmonics based on saturation
+        if saturation > 0.1:
+            third_harmonic = np.sin(2 * np.pi * f * 3 * t) * saturation * 0.5
+            signal += third_harmonic
+        if saturation > 0.4:
+            fifth_harmonic = np.sin(2 * np.pi * f * 5 * t) * (saturation - 0.4) * 0.4
+            signal += fifth_harmonic
+        if saturation > 0.7:
+            seventh_harmonic = np.sin(2 * np.pi * f * 7 * t) * (saturation - 0.7) * 0.3
+            signal += seventh_harmonic
         
     else:
         # Fallback: simple sine
         signal = np.sin(2 * np.pi * f * t)
     
-    # Apply brightness-controlled filtering for applicable instruments
-    if instrument in ["pad_warm", "brass_short", "marimba"]:
-        # Calculate cutoff frequency based on brightness
-        base_cutoff = f * 2  # Start at 2x fundamental
-        max_cutoff = min(8000, f * 8)  # Cap at reasonable frequency
-        cutoff = base_cutoff + (max_cutoff - base_cutoff) * brightness
-        signal = _apply_1pole_lpf(signal, cutoff, 44100)  # Assume 44.1kHz sample rate
+    # Apply value-controlled filtering to all instruments
+    # Calculate cutoff frequency based on color value (brightness)
+    base_cutoff = f * 1.5  # Start at 1.5x fundamental (more conservative)
+    max_cutoff = min(12000, f * 12)  # Higher max for brighter sounds
+    cutoff = base_cutoff + (max_cutoff - base_cutoff) * value
+    
+    # Apply filtering - more aggressive for harmonically rich instruments
+    filter_intensity = 1.0
+    if instrument in ["pad_warm", "brass_short"]:
+        filter_intensity = 0.8  # More filtering for saw-based instruments
+    elif instrument in ["pad_glass", "bell"]:
+        filter_intensity = 0.3  # Light filtering for pure tones
+    else:
+        filter_intensity = 0.6  # Medium filtering for others
+    
+    # Mix filtered and unfiltered signal based on filter intensity
+    filtered_signal = _apply_1pole_lpf(signal, cutoff, 44100)
+    signal = signal * (1 - filter_intensity) + filtered_signal * filter_intensity
     
     return signal
 
@@ -258,30 +405,51 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
             progress = int((processed / total_notes) * 100)
             print(f"   [{progress}%] 🎼 Synthesizing note {processed}/{total_notes}...")
 
-        # Parse track name to extract instrument and brightness
+        # Initialize color properties for all notes
+        color_value = 0.5  # Default value for non-voice tracks
+        is_pad = False
+        
+        # Parse track name to extract instrument and voice color properties
         if n.track.startswith("voice_"):
             # Format: "voice_X_instrumentname" 
             parts = n.track.split("_")
             if len(parts) >= 3:
                 instrument = parts[2]
+                voice_id = int(parts[1])  # Extract voice ID for color mapping
+                is_pad = "pad" in instrument
             else:
                 instrument = "pluck"  # Fallback
+                voice_id = 0
             
-            # Extract brightness from note velocity (using it as a proxy)
+            # Derive color properties from note characteristics
+            # Since we don't have direct access to VoiceSpec here, we'll use heuristics
+            # Higher velocity often correlates with higher saturation
+            saturation = min(1.0, n.vel * 1.5)  # Scale velocity to saturation
+            
+            # Use MIDI note position to derive brightness (higher notes = brighter)
+            # Middle C (60) as baseline
+            color_value = 0.3 + 0.7 * min(1.0, max(0.0, (n.midi - 48) / 48.0))  # Map MIDI 48-96 to value 0.3-1.0
+            
+            # Legacy brightness for backward compatibility
             brightness = n.vel  # vel already represents gain, use as brightness too
             
             # Generate instrument-specific signal
             f = _midi_to_freq(n.midi)
             t = np.arange(length) / sr
             
-            # Synthesize the instrument
-            sig = _synthesize_instrument(instrument, f, t, brightness)
+            # Synthesize the instrument with color control
+            sig = _synthesize_instrument(instrument, f, t, brightness, saturation, color_value)
             
             # Apply appropriate envelope
             env = _get_envelope(instrument, length, sr)
             
             # Apply envelope and velocity
             sig = sig * env * n.vel * 0.12
+            
+            # Apply reverb based on color value (brighter = more reverb)
+            reverb_amount = color_value * 0.3  # Scale to 0-30% reverb
+            sig = _apply_simple_reverb(sig, reverb_amount, sr)
+            
             sig = sig.astype(np.float32)
             
         elif n.track.startswith("transition_"):
@@ -370,9 +538,19 @@ def render_wav(notes: List[Note], sr: int, out_path) -> None:
         pan = getattr(n, 'pan', 0.0)  # Default to center if no pan
         left_gain, right_gain = _equal_power_pan(pan)
         
+        # Create initial stereo signals
+        left_sig = sig * left_gain
+        right_sig = sig * right_gain
+        
+        # Apply stereo widening to pad instruments when brightness is high
+        if is_pad and color_value > 0.6:
+            # Only widen pads when color_value (brightness) > 0.6 for airy feel
+            width_amount = (color_value - 0.6) * 2.5  # Map 0.6-1.0 to 0.0-1.0
+            left_sig, right_sig = _apply_stereo_widener(left_sig, right_sig, width_amount, sr)
+        
         # Mix into stereo buffer
-        y[start:start+length, 0] += sig * left_gain   # Left channel
-        y[start:start+length, 1] += sig * right_gain  # Right channel
+        y[start:start+length, 0] += left_sig   # Left channel
+        y[start:start+length, 1] += right_sig  # Right channel
         
         processed += 1
     
